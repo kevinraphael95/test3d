@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ForestSimulator - Expert Flora</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+body { margin: 0; overflow: hidden; background: #000; cursor: crosshair; }
+
+#ui-stats {
+position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+width: 500px; display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+
+.bar-bg { width: 100%; height: 6px; background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.1); }
+.bar-fill { height: 100%; transition: width 0.1s; }
+#hp { background: #911; } #mp { background: #119; } #sp { background: #191; }
+
+#top-ui {
+position: absolute; top: 20px; left: 20px;
+color: #f0e6d2; font-family: Cinzel;
+text-shadow: 2px 2px 5px #000;
+}
+</style>
+</head>
+
+<body>
+
+<div id="top-ui">
+<h2>FOREST SIMULATOR</h2>
+<p>Végétation Dense & Collisions Organiques</p>
+</div>
+
+<div id="ui-stats">
+<div class="bar-bg"><div id="mp" class="bar-fill" style="width:100%"></div></div>
+<div class="bar-bg"><div id="hp" class="bar-fill" style="width:100%"></div></div>
+<div class="bar-bg"><div id="sp" class="bar-fill" style="width:100%"></div></div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+
+import * as THREE from 'three';
+import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+
+/* ================= SCENE (SKYRIM DAY FIX) ================= */
+
+const scene = new THREE.Scene();
+
+/* SKY COHERENT SKYRIM DAY */
+scene.background = new THREE.Color(0x87a7c4); // bleu ciel clair Skyrim jour
+scene.fog = new THREE.FogExp2(0x9bb4c7, 0.0035);
+
+/* CAMERA */
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 4000);
+
+/* RENDER */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+/* ================= LIGHT SKYRIM STYLE ================= */
+
+scene.add(new THREE.HemisphereLight(0xddeeff, 0x3a2f1f, 0.85));
+
+const sun = new THREE.DirectionalLight(0xfff2d6, 2.2);
+sun.position.set(200, 400, 100);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024,1024);
+scene.add(sun);
+
+/* ================= TERRAIN (UNCHANGED LOOK) ================= */
+
+const groundGeo = new THREE.PlaneGeometry(1000,1000,100,100);
+const pos = groundGeo.attributes.position.array;
+
+for(let i=0;i<pos.length;i+=3){
+pos[i+2] = Math.sin(pos[i]*0.03)*Math.cos(pos[i+1]*0.03)*10;
+}
+
+groundGeo.computeVertexNormals();
+
+const ground = new THREE.Mesh(
+groundGeo,
+new THREE.MeshStandardMaterial({ color:0x1a2b10, roughness:1 })
+);
+
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+ground.updateMatrixWorld();
+
+/* ================= FIX HEIGHT (IMPORTANT BUG FIX) ================= */
+
+const raycaster = new THREE.Raycaster();
+
+function findY(x,z){
+raycaster.ray.origin.set(x,200,z);
+raycaster.ray.direction.set(0,-1,0);
+const hit = raycaster.intersectObject(ground);
+return hit.length ? hit[0].point.y : 0;
+}
+
+/* ================= SYSTEMS ================= */
+
+const windObjs = [];
+const colliders = [];
+const fireflies = [];
+
+/* ================= FLOWERS (UNCHANGED STYLE) ================= */
+
+function spawnFlower(x,z){
+const y = findY(x,z);
+
+const g = new THREE.Group();
+
+const stem = new THREE.Mesh(
+new THREE.CylinderGeometry(0.02,0.03,0.8),
+new THREE.MeshStandardMaterial({color:0x2d4c1e})
+);
+stem.position.y = 0.4;
+
+const head = new THREE.Mesh(
+new THREE.SphereGeometry(0.12,6,6),
+new THREE.MeshStandardMaterial({
+color:[0xff4444,0x4444ff,0xffff44,0xffffff][Math.random()*4|0]
+})
+);
+head.position.y = 0.8;
+
+g.add(stem,head);
+g.position.set(x,y,z);
+
+scene.add(g);
+
+windObjs.push({mesh:g,phase:Math.random()*5,speed:2,amp:0.05});
+}
+
+/* ================= TREE (FIX FLOAT + SAME STYLE) ================= */
+
+function spawnTree(x,z){
+
+const y = findY(x,z);
+
+const treeGroup = new THREE.Group();
+
+const height = 15 + Math.random()*20;
+const trunkThickness = 0.8 + Math.random()*0.8;
+
+/* TRONC FIX POSITION (NO FLOAT) */
+const trunk = new THREE.Mesh(
+new THREE.CylinderGeometry(trunkThickness*0.4,trunkThickness,height,8),
+new THREE.MeshStandardMaterial({color:0x1a0f0a})
+);
+
+trunk.position.y = height/2;
+treeGroup.add(trunk);
+
+/* CONES (UNCHANGED STYLE) */
+const layerCount = 6 + (Math.random()*6|0);
+
+for(let i=0;i<layerCount;i++){
+
+const ratio = i/layerCount;
+const size = (1-ratio)*(trunkThickness*8)+1;
+
+const layer = new THREE.Mesh(
+new THREE.ConeGeometry(size,6,8),
+new THREE.MeshStandardMaterial({color:0x0a1a0a})
+);
+
+layer.position.y = height*0.3 + ratio*height*0.8;
+treeGroup.add(layer);
+
+windObjs.push({mesh:layer,phase:Math.random()*5,speed:0.5,amp:0.02});
+}
+
+/* IMPORTANT FIX: ALIGN TO GROUND */
+treeGroup.position.set(x,y,z);
+
+scene.add(treeGroup);
+
+/* collider */
+colliders.push({x,z,r:trunkThickness+0.6});
+}
+
+/* ================= FIREFLIES (IMPROVED + MANY) ================= */
+
+function spawnFirefly(){
+
+const m = new THREE.Mesh(
+new THREE.SphereGeometry(0.05),
+new THREE.MeshBasicMaterial({color:0xffff99})
+);
+
+const x = (Math.random()-0.5)*700;
+const z = (Math.random()-0.5)*700;
+
+m.position.set(x, findY(x,z)+2, z);
+scene.add(m);
+
+fireflies.push({
+mesh:m,
+phase:Math.random()*Math.PI*2,
+baseY:m.position.y
+});
+}
+
+/* ================= WORLD SPAWN ================= */
+
+for(let i=0;i<150;i++) spawnTree((Math.random()-0.5)*700,(Math.random()-0.5)*700);
+for(let i=0;i<500;i++) spawnFlower((Math.random()-0.5)*400,(Math.random()-0.5)*400);
+for(let i=0;i<120;i++) spawnFirefly();
+
+/* ================= CONTROLS ================= */
+
+const controls = new PointerLockControls(camera,document.body);
+document.body.addEventListener('click',()=>controls.lock());
+
+let velocity=new THREE.Vector3();
+let keys={z:false,s:false,q:false,d:false,shift:false};
+let jumpVel=0;
+let grounded=true;
+let stamina=100;
+
+/* INPUT */
+addEventListener("keydown",e=>{
+const k=e.key.toLowerCase();
+if(k in keys) keys[k]=true;
+if(e.shiftKey) keys.shift=true;
+if(e.code==="Space" && grounded){
+jumpVel=0.25;
+grounded=false;
+}
+});
+
+addEventListener("keyup",e=>{
+const k=e.key.toLowerCase();
+if(k in keys) keys[k]=false;
+if(!e.shiftKey) keys.shift=false;
+});
+
+/* ================= LOOP ================= */
+
+function animate(t){
+requestAnimationFrame(animate);
+t*=0.001;
+
+/* wind */
+for(const w of windObjs){
+w.mesh.rotation.z=Math.sin(t*w.speed+w.phase)*w.amp;
+}
+
+/* fireflies smooth Skyrim glow */
+for(const f of fireflies){
+f.mesh.position.y=f.baseY + Math.sin(t+f.phase)*0.5;
+f.mesh.position.x+=Math.cos(t*0.5+f.phase)*0.02;
+}
+
+/* movement */
+if(controls.isLocked){
+
+const run=keys.shift&&stamina>0&&keys.z;
+const accel=run?0.04:0.02;
+
+stamina=run?stamina-0.4:Math.min(100,stamina+0.15);
+document.getElementById('sp').style.width=stamina+"%";
+
+const f=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+const r=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+f.y=r.y=0; f.normalize(); r.normalize();
+
+if(keys.z) velocity.add(f.multiplyScalar(accel));
+if(keys.s) velocity.sub(f.multiplyScalar(accel));
+if(keys.q) velocity.sub(r.multiplyScalar(accel));
+if(keys.d) velocity.add(r.multiplyScalar(accel));
+
+velocity.multiplyScalar(0.9);
+
+let nx=camera.position.x+velocity.x;
+let nz=camera.position.z+velocity.z;
+
+/* collisions */
+for(const c of colliders){
+const dx=nx-c.x;
+const dz=nz-c.z;
+const d=Math.sqrt(dx*dx+dz*dz);
+
+if(d<c.r){
+const a=Math.atan2(dz,dx);
+nx=c.x+Math.cos(a)*c.r;
+nz=c.z+Math.sin(a)*c.r;
+velocity.multiplyScalar(0.6);
+}
+}
+
+camera.position.x=nx;
+camera.position.z=nz;
+
+/* ground */
+const gy=findY(nx,nz)+1.8;
+jumpVel-=0.01;
+camera.position.y+=jumpVel;
+
+if(camera.position.y<gy){
+camera.position.y=gy;
+jumpVel=0;
+grounded=true;
+}
+}
+
+renderer.render(scene,camera);
+}
+
+animate(0);
+</script>
+
+</body>
+</html>
