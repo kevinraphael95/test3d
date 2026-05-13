@@ -1,503 +1,453 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+import { mergeGeometries } from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
 
 /* ===================================================== */
-/* SCENE */
+/* HEIGHTMAP — formule directe, zéro raycast             */
+/* ===================================================== */
+
+function findY(x, z) {
+    return Math.sin(x * 0.025) * 8
+         + Math.cos(z * 0.020) * 6
+         + Math.sin((x + z) * 0.01) * 12;
+}
+
+/* ===================================================== */
+/* SCENE                                                  */
 /* ===================================================== */
 
 const scene = new THREE.Scene();
-
-scene.background = new THREE.Color(0x87a7c4);
-scene.fog = new THREE.FogExp2(0x9bb4c7, 0.0028);
+scene.fog = new THREE.FogExp2(0xc8d8e8, 0.003);
 
 /* ===================================================== */
-/* CAMERA */
+/* SKYBOX shader Skyrim                                   */
 /* ===================================================== */
 
-const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    4000
-);
+const SUN_DIR = new THREE.Vector3(0.45, 0.35, -0.82).normalize();
 
-camera.position.set(0, 10, 0);
+scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(2400, 20, 12),
+    new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthWrite: false,
+        uniforms: {
+            sunDir:    { value: SUN_DIR },
+            sunColor:  { value: new THREE.Color(0xfffbe0) },
+        },
+        vertexShader: `
+            varying vec3 vDir;
+            void main(){
+                vDir = normalize((modelMatrix * vec4(position,1.0)).xyz);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 sunDir, sunColor;
+            varying vec3 vDir;
+            void main(){
+                float h = vDir.y;
+                vec3 top  = vec3(0.10,0.24,0.44);
+                vec3 mid  = vec3(0.42,0.68,0.84);
+                vec3 horiz= vec3(0.83,0.91,0.96);
+                vec3 sky  = mix(horiz, mid,  smoothstep(0.0,0.22,h));
+                sky       = mix(sky,   top,  smoothstep(0.18,0.75,h));
+                sky       = mix(vec3(0.07,0.05,0.03), sky, smoothstep(-0.04,0.01,h));
+                float d   = dot(normalize(vDir), normalize(sunDir));
+                sky += sunColor * smoothstep(0.9992,1.00,d);
+                sky += sunColor * smoothstep(0.994,0.999,d)*0.45;
+                sky += sunColor * smoothstep(0.97,0.994,d)*0.08;
+                gl_FragColor = vec4(sky,1.0);
+            }
+        `
+    })
+));
 
 /* ===================================================== */
-/* RENDERER */
+/* CAMERA                                                 */
 /* ===================================================== */
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1400);
+camera.position.set(0, findY(0,0)+1.8, 0);
 
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+/* ===================================================== */
+/* RENDERER                                               */
+/* ===================================================== */
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
-
+renderer.toneMappingExposure = 1.1;
 document.body.appendChild(renderer.domElement);
 
 /* ===================================================== */
-/* LIGHT */
+/* LUMIERES                                               */
 /* ===================================================== */
 
-scene.add(new THREE.HemisphereLight(0xddeeff, 0x3d2f1b, 1));
-
-const sun = new THREE.DirectionalLight(0xfff2d6, 2.5);
-sun.position.set(200, 300, 100);
-sun.castShadow = true;
-sun.shadow.mapSize.width = 2048;
-sun.shadow.mapSize.height = 2048;
-sun.shadow.camera.left = -300;
-sun.shadow.camera.right = 300;
-sun.shadow.camera.top = 300;
-sun.shadow.camera.bottom = -300;
+scene.add(new THREE.HemisphereLight(0xc8ddf5, 0x2a3d1a, 1.3));
+const sun = new THREE.DirectionalLight(0xfff5d0, 2.0);
+sun.position.copy(SUN_DIR).multiplyScalar(300);
 scene.add(sun);
 
 /* ===================================================== */
-/* TERRAIN */
+/* TERRAIN                                                */
 /* ===================================================== */
 
-const groundGeo = new THREE.PlaneGeometry(1200, 1200, 140, 140);
-
-const p = groundGeo.attributes.position.array;
-
-for (let i = 0; i < p.length; i += 3) {
-    const x = p[i];
-    const z = p[i + 1];
-    p[i + 2] =
-        Math.sin(x * 0.025) * 8 +
-        Math.cos(z * 0.02) * 6 +
-        Math.sin((x + z) * 0.01) * 12;
+const groundGeo = new THREE.PlaneGeometry(1200, 1200, 80, 80);
+const gpos = groundGeo.attributes.position.array;
+for (let i = 0; i < gpos.length; i += 3) {
+    gpos[i+2] = findY(gpos[i], gpos[i+1]);
 }
-
 groundGeo.computeVertexNormals();
-
-const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x243b1d,
-    roughness: 1
-});
-
-const ground = new THREE.Mesh(groundGeo, groundMat);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
+const ground = new THREE.Mesh(
+    groundGeo,
+    new THREE.MeshLambertMaterial({ color: 0x243b1d })
+);
+ground.rotation.x = -Math.PI/2;
 scene.add(ground);
-ground.updateMatrixWorld();
 
 /* ===================================================== */
-/* HEIGHT */
+/* PHYSIQUE 3D — capsule + sphères statiques + grid       */
 /* ===================================================== */
 
-const raycaster = new THREE.Raycaster();
+const PLAYER_R = 0.5, PLAYER_H = 1.8;
+const GRAVITY = -18, JUMP_VEL = 7;
+const playerVel = new THREE.Vector3();
+let grounded = false;
 
-function findY(x, z) {
-    raycaster.ray.origin.set(x, 300, z);
-    raycaster.ray.direction.set(0, -1, 0);
-    const hit = raycaster.intersectObject(ground);
-    return hit.length ? hit[0].point.y : 0;
+const staticSpheres = [];
+const CELL = 20;
+const grid = new Map();
+
+function gkey(x, z) { return `${Math.floor(x/CELL)},${Math.floor(z/CELL)}`; }
+
+function addSphere(cx, cy, cz, r) {
+    const idx = staticSpheres.length;
+    staticSpheres.push({cx,cy,cz,r});
+    const cells = new Set();
+    for(let a=-1;a<=1;a++) for(let b=-1;b<=1;b++) cells.add(gkey(cx+a*r,cz+b*r));
+    for(const k of cells){ if(!grid.has(k)) grid.set(k,[]); grid.get(k).push(idx); }
+}
+
+function resolveVsSphere(s) {
+    const cy_lo = camera.position.y - PLAYER_H + PLAYER_R;
+    const cy_hi = camera.position.y - PLAYER_R;
+    const ccy   = Math.max(cy_lo, Math.min(cy_hi, s.cy));
+    const dx=camera.position.x-s.cx, dy=camera.position.y-ccy, dz=camera.position.z-s.cz;
+    const d2=dx*dx+dy*dy+dz*dz, mn=s.r+PLAYER_R;
+    if(d2>=mn*mn) return;
+    const d=Math.sqrt(d2)||0.001, pen=mn-d;
+    camera.position.x+=dx/d*pen; camera.position.z+=dz/d*pen;
+    const vd=playerVel.x*(dx/d)+playerVel.z*(dz/d);
+    if(vd<0){ playerVel.x-=vd*(dx/d); playerVel.z-=vd*(dz/d); }
 }
 
 /* ===================================================== */
-/* SYSTEMS */
+/* GRASS — instanced                                      */
 /* ===================================================== */
 
-const windObjects = [];
-const colliders = [];
-const fireflies = [];
-const scentParticles = []; // odeur des fleurs
-
-/* ===================================================== */
-/* GRASS */
-/* ===================================================== */
-
-const grassGeo = new THREE.CylinderGeometry(0.02, 0.05, 1.2, 3);
-const grassMat = new THREE.MeshStandardMaterial({ color: 0x3f6b2d });
-const grassCount = 2500;
-const grassMesh = new THREE.InstancedMesh(grassGeo, grassMat, grassCount);
-scene.add(grassMesh);
-
-const dummy = new THREE.Object3D();
-
-for (let i = 0; i < grassCount; i++) {
-    const x = (Math.random() - 0.5) * 900;
-    const z = (Math.random() - 0.5) * 900;
-    const y = findY(x, z);
-    dummy.position.set(x, y + 0.5, z);
-    dummy.scale.setScalar(0.7 + Math.random() * 1.8);
-    dummy.rotation.y = Math.random() * Math.PI;
-    dummy.updateMatrix();
-    grassMesh.setMatrixAt(i, dummy.matrix);
-}
-
-/* ===================================================== */
-/* FLOWERS + SCENT PARTICLES */
-/* ===================================================== */
-
-const FLOWER_COLORS = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
-
-function spawnFlower(x, z) {
-    const y = findY(x, z);
-    const g = new THREE.Group();
-
-    const stem = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.02, 0.03, 0.7),
-        new THREE.MeshStandardMaterial({ color: 0x2d4c1e })
-    );
-    stem.position.y = 0.35;
-
-    const flowerColor = FLOWER_COLORS[Math.random() * 5 | 0];
-
-    const head = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 6, 6),
-        new THREE.MeshStandardMaterial({
-            color: flowerColor,
-            emissive: flowerColor,
-            emissiveIntensity: 0.1
-        })
-    );
-    head.position.y = 0.8;
-
-    g.add(stem, head);
-    g.position.set(x, y, z);
-    scene.add(g);
-
-    windObjects.push({
-        mesh: g,
-        phase: Math.random() * 5,
-        speed: 2,
-        amp: 0.04
-    });
-
-    // Scent particles — quelques traînées légères
-    const particleCount = 4 + Math.random() * 4 | 0;
-    const geo = new THREE.BufferGeometry();
-    const positions = new Float32Array(particleCount * 3);
-
-    for (let i = 0; i < particleCount; i++) {
-        positions[i * 3]     = x + (Math.random() - 0.5) * 0.6;
-        positions[i * 3 + 1] = y + 0.8 + Math.random() * 1.5;
-        positions[i * 3 + 2] = z + (Math.random() - 0.5) * 0.6;
+const GRASS_N = 1500;
+const gMesh = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.02,0.05,1.0,3,1),
+    new THREE.MeshLambertMaterial({color:0x3f6b2d}),
+    GRASS_N
+);
+scene.add(gMesh);
+{
+    const d=new THREE.Object3D();
+    for(let i=0;i<GRASS_N;i++){
+        const gx=(Math.random()-.5)*800, gz=(Math.random()-.5)*800;
+        d.position.set(gx, findY(gx,gz)+0.4, gz);
+        d.scale.setScalar(0.5+Math.random()*1.4);
+        d.rotation.y=Math.random()*Math.PI;
+        d.updateMatrix();
+        gMesh.setMatrixAt(i,d.matrix);
     }
+    gMesh.instanceMatrix.needsUpdate=true;
+}
 
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+/* ===================================================== */
+/* FLEURS — instanced heads + merged stems + scent lines  */
+/* ===================================================== */
 
-    const mat = new THREE.PointsMaterial({
-        color: flowerColor,
-        size: 0.06 + Math.random() * 0.06,
-        transparent: true,
-        opacity: 0.22,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-    });
+const FCOLS = [0xff4444,0x4466ff,0xffff55,0xdddddd,0xff66cc];
+const FLOWER_N = 350;
+const SEG = 6;
+const WIND = new THREE.Vector2(1.0,0.3).normalize().multiplyScalar(1.2);
 
-    const points = new THREE.Points(geo, mat);
-    scene.add(points);
+// Instanced mesh par couleur
+const fMeshes = FCOLS.map(c => {
+    const m = new THREE.InstancedMesh(
+        new THREE.SphereGeometry(0.12,5,4),
+        new THREE.MeshLambertMaterial({color:c,emissive:c,emissiveIntensity:0.15}),
+        Math.ceil(FLOWER_N/FCOLS.length)+2
+    );
+    m.frustumCulled=true;
+    scene.add(m);
+    return m;
+});
 
-    // Stocker les données pour animation
-    const phases = Array.from({ length: particleCount }, () => Math.random() * Math.PI * 2);
-    scentParticles.push({
-        points,
-        positions,
-        baseX: x,
-        baseY: y + 0.8,
-        baseZ: z,
-        color: flowerColor,
-        phases
+const scentLines = [];
+const stemGeos   = [];
+const stemMat    = new THREE.MeshLambertMaterial({color:0x2d4c1e});
+const fcounters  = new Array(FCOLS.length).fill(0);
+const fDummy     = new THREE.Object3D();
+
+for(let i=0;i<FLOWER_N;i++){
+    const fx=(Math.random()-.5)*700, fz=(Math.random()-.5)*700;
+    const fy=findY(fx,fz);
+    const ci=Math.random()*FCOLS.length|0;
+
+    // Tête
+    fDummy.position.set(fx, fy+0.8, fz); fDummy.updateMatrix();
+    fMeshes[ci].setMatrixAt(fcounters[ci]++, fDummy.matrix);
+
+    // Tige (merge plus tard)
+    const sg=new THREE.CylinderGeometry(0.02,0.03,0.7,4,1);
+    sg.translate(fx,fy+0.35,fz);
+    stemGeos.push(sg);
+
+    // 1 ligne d'odeur par fleur
+    const pts=[]; for(let s=0;s<=SEG;s++) pts.push(new THREE.Vector3());
+    const geo=new THREE.BufferGeometry().setFromPoints(pts);
+    const line=new THREE.Line(geo, new THREE.LineBasicMaterial({
+        color:FCOLS[ci], transparent:true, opacity:0.0,
+        depthWrite:false, blending:THREE.AdditiveBlending
+    }));
+    scene.add(line);
+    scentLines.push({
+        line, geo,
+        bx:fx, by:fy+0.85, bz:fz,
+        phase:Math.random()*Math.PI*2,
+        speed:0.3+Math.random()*0.5,
+        dx:(Math.random()-.5)*0.9,
+        dz:(Math.random()-.5)*0.3,
+        off:Math.random()*3
     });
 }
 
+fMeshes.forEach((m,i)=>{ m.count=fcounters[i]; m.instanceMatrix.needsUpdate=true; });
+
+// Merge tiges
+const mergedStems = mergeGeometries(stemGeos, false);
+if(mergedStems) scene.add(new THREE.Mesh(mergedStems, stemMat));
+stemGeos.forEach(g=>g.dispose());
+
 /* ===================================================== */
-/* ROCKS */
+/* ROCHERS — instanced                                    */
 /* ===================================================== */
 
-function spawnRock(x, z) {
-    const y = findY(x, z);
-    const rock = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(1 + Math.random() * 2, 0),
-        new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 1 })
-    );
-    rock.position.set(x, y + 0.5, z);
-    rock.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-    );
-    rock.scale.y = 0.6;
-    rock.castShadow = true;
-    rock.receiveShadow = true;
-    scene.add(rock);
-    colliders.push({ x, z, r: 2 });
+const ROCK_N = 80;
+const rMesh = new THREE.InstancedMesh(
+    new THREE.DodecahedronGeometry(1,0),
+    new THREE.MeshLambertMaterial({color:0x666666}),
+    ROCK_N
+);
+rMesh.frustumCulled=true;
+scene.add(rMesh);
+{
+    const d=new THREE.Object3D();
+    for(let i=0;i<ROCK_N;i++){
+        const rx=(Math.random()-.5)*800, rz=(Math.random()-.5)*800;
+        const ry=findY(rx,rz);
+        const s=0.8+Math.random()*1.8;
+        d.position.set(rx,ry+s*0.3,rz);
+        d.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+        d.scale.set(s,s*0.6,s);
+        d.updateMatrix();
+        rMesh.setMatrixAt(i,d.matrix);
+        addSphere(rx,ry+s*0.3,rz,s*0.9);
+    }
+    rMesh.instanceMatrix.needsUpdate=true;
 }
 
 /* ===================================================== */
-/* TREES */
+/* ARBRES — tout merged (1 draw call par matière)         */
 /* ===================================================== */
 
-function spawnTree(x, z) {
-    const y = findY(x, z);
-    const tree = new THREE.Group();
+const TREE_N   = 100;
+const trunkGs  = [], rootGs = [], leafGs = [[],[],[]];
 
-    const height = 18 + Math.random() * 18;
-    const trunkRadius = 1 + Math.random() * 0.6;
+for(let i=0;i<TREE_N;i++){
+    const tx=(Math.random()-.5)*900, tz=(Math.random()-.5)*900;
+    const ty=findY(tx,tz);
+    const h=18+Math.random()*18, tr=1+Math.random()*0.6;
 
-    // Tronc allongé vers le bas pour couvrir le terrain irrégulier
-    const trunkExtend = 8; // prolongement sous le sol
-    const trunkTotal = height + trunkExtend;
+    // Tronc prolongé -10 sous le sol
+    const tg=new THREE.CylinderGeometry(tr*0.55,tr*1.1,h+10,6,1);
+    tg.translate(tx, ty+h/2-5, tz);
+    trunkGs.push(tg);
 
-    const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(
-            trunkRadius * 0.55,
-            trunkRadius * 1.1,
-            trunkTotal,
-            8
-        ),
-        new THREE.MeshStandardMaterial({ color: 0x1a0f0a })
-    );
-
-    // Centre du cylindre décalé vers le haut pour que le prolongement soit sous terre
-    trunk.position.y = height / 2 - trunkExtend / 2;
-    trunk.castShadow = true;
-    tree.add(trunk);
-
-    // RACINES — orientées vers le bas
-    for (let i = 0; i < 5; i++) {
-        const root = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.08, 0.25, 3.5, 5),
-            new THREE.MeshStandardMaterial({ color: 0x22150f })
+    // Racines — pivotent de la base vers le bas
+    for(let r=0;r<5;r++){
+        const ang=(Math.PI*2/5)*r;
+        const rLen=2.0+Math.random()*1.2, rT=0.10+Math.random()*0.07;
+        const rg=new THREE.CylinderGeometry(rT*0.3,rT,rLen,4,1);
+        // Incline vers le bas (>PI/2 = sous horizontal)
+        rg.rotateX(0);
+        rg.rotateZ(Math.PI/2 + 0.85 + Math.random()*0.3);
+        rg.rotateY(ang);
+        // Translation au pied du tronc + décalage vers bas
+        rg.translate(
+            tx + Math.cos(ang)*tr*0.8,
+            ty - rLen*0.5 + 0.2,
+            tz + Math.sin(ang)*tr*0.8
         );
-
-        const angle = (Math.PI * 2 / 5) * i;
-        const spread = trunkRadius + 0.8;
-
-        // Inclinaison vers le bas et vers l'extérieur
-        root.position.set(
-            Math.cos(angle) * spread,
-            -1.2, // sous la base
-            Math.sin(angle) * spread
-        );
-
-        // Rotation : pointe vers le sol, légèrement évasée
-        root.rotation.z = Math.PI / 2 - 0.5;
-        root.rotation.y = angle;
-
-        // Incliner le cylindre vers le bas (rotation locale)
-        root.rotateOnAxis(new THREE.Vector3(0, 1, 0), 0); // déjà géré par rotation.y
-
-        // On tourne autour de l'axe local X pour faire aller la racine vers le bas
-        const rootGroup = new THREE.Group();
-        rootGroup.position.set(
-            Math.cos(angle) * (trunkRadius * 0.8),
-            0.3,
-            Math.sin(angle) * (trunkRadius * 0.8)
-        );
-        rootGroup.rotation.y = angle;
-        // Incliner vers le bas : -Math.PI/2 + angle_spread
-        rootGroup.rotation.z = -(Math.PI / 2 - 0.7); // pointe vers le sol
-
-        const rootMesh = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.08, 0.28, 3.5, 5),
-            new THREE.MeshStandardMaterial({ color: 0x22150f })
-        );
-        rootMesh.position.y = -1.2; // centre du cylindre en bas
-        rootGroup.add(rootMesh);
-        tree.add(rootGroup);
+        rootGs.push(rg);
     }
 
-    // FEUILLAGE style RPG
-    const layers = 7 + (Math.random() * 4 | 0);
-
-    for (let i = 0; i < layers; i++) {
-        const ratio = i / layers;
-        const size = (1 - ratio) * (trunkRadius * 7) + 2;
-
-        const cone = new THREE.Mesh(
-            new THREE.ConeGeometry(size, 7, 8),
-            new THREE.MeshStandardMaterial({
-                color: [0x0f240f, 0x163016, 0x1c3d1c][Math.random() * 3 | 0]
-            })
-        );
-
-        cone.position.y = height * 0.3 + ratio * height * 0.75;
-        cone.castShadow = true;
-        tree.add(cone);
-
-        windObjects.push({
-            mesh: cone,
-            phase: Math.random() * 10,
-            speed: 0.5,
-            amp: 0.015
-        });
+    // Feuillage
+    const layers=5+(Math.random()*3|0);
+    for(let l=0;l<layers;l++){
+        const ratio=l/layers;
+        const size=(1-ratio)*(tr*6)+1.5;
+        const ci=Math.random()*3|0;
+        const cg=new THREE.ConeGeometry(size,6,7,1);
+        cg.translate(tx, ty+h*0.28+ratio*h*0.75, tz);
+        leafGs[ci].push(cg);
     }
 
-    tree.position.set(x, y, z);
-    scene.add(tree);
-
-    colliders.push({ x, z, r: trunkRadius + 1.2 });
+    addSphere(tx,ty+5, tz,tr+1.0);
+    addSphere(tx,ty+13,tz,tr+0.7);
 }
 
+const tMat  = new THREE.MeshLambertMaterial({color:0x1a0f0a});
+const rMat  = new THREE.MeshLambertMaterial({color:0x22150f});
+const lMats = [0x0f240f,0x163016,0x1c3d1c].map(c=>new THREE.MeshLambertMaterial({color:c}));
+
+function mergeAdd(geos,mat){
+    if(!geos.length) return;
+    const m=mergeGeometries(geos,false);
+    if(m) scene.add(new THREE.Mesh(m,mat));
+    geos.forEach(g=>g.dispose());
+}
+mergeAdd(trunkGs, tMat);
+mergeAdd(rootGs,  rMat);
+for(let i=0;i<3;i++) mergeAdd(leafGs[i], lMats[i]);
+
 /* ===================================================== */
-/* FIREFLIES */
+/* LUCIOLES — 20 max                                     */
 /* ===================================================== */
 
-function spawnFirefly() {
-    const light = new THREE.PointLight(0xffffaa, 0.7, 8);
-    const x = (Math.random() - 0.5) * 800;
-    const z = (Math.random() - 0.5) * 800;
-    const y = findY(x, z) + 2 + Math.random() * 4;
-    light.position.set(x, y, z);
+const fireflies=[];
+for(let i=0;i<20;i++){
+    const light=new THREE.PointLight(0xffffaa,0.5,10);
+    const fx=(Math.random()-.5)*600, fz=(Math.random()-.5)*600;
+    const fy=findY(fx,fz)+2+Math.random()*4;
+    light.position.set(fx,fy,fz);
     scene.add(light);
-    fireflies.push({ light, baseY: y, phase: Math.random() * 10 });
+    fireflies.push({light,bx:fx,bz:fz,by:fy,phase:Math.random()*10});
 }
 
 /* ===================================================== */
-/* WORLD */
+/* CONTROLS                                               */
 /* ===================================================== */
 
-for (let i = 0; i < 170; i++)
-    spawnTree((Math.random() - 0.5) * 900, (Math.random() - 0.5) * 900);
+const controls=new PointerLockControls(camera,document.body);
+document.body.addEventListener('click',()=>controls.lock());
 
-for (let i = 0; i < 700; i++)
-    spawnFlower((Math.random() - 0.5) * 700, (Math.random() - 0.5) * 700);
+const keys={z:false,s:false,q:false,d:false,shift:false};
+let stamina=100;
 
-for (let i = 0; i < 120; i++)
-    spawnRock((Math.random() - 0.5) * 800, (Math.random() - 0.5) * 800);
-
-for (let i = 0; i < 90; i++)
-    spawnFirefly();
-
-/* ===================================================== */
-/* CONTROLS */
-/* ===================================================== */
-
-const controls = new PointerLockControls(camera, document.body);
-document.body.addEventListener('click', () => controls.lock());
-
-const velocity = new THREE.Vector3();
-const keys = { z: false, s: false, q: false, d: false, shift: false };
-let jumpVel = 0;
-let grounded = true;
-let stamina = 100;
-
-addEventListener("keydown", e => {
-    const k = e.key.toLowerCase();
-    if (k in keys) keys[k] = true;
-    if (e.shiftKey) keys.shift = true;
-    if (e.code === "Space" && grounded) {
-        grounded = false;
-        jumpVel = 0.28;
-    }
+addEventListener('keydown',e=>{
+    const k=e.key.toLowerCase();
+    if(k in keys) keys[k]=true;
+    if(e.shiftKey) keys.shift=true;
+    if(e.code==='Space'&&grounded){ playerVel.y=JUMP_VEL; grounded=false; }
 });
-
-addEventListener("keyup", e => {
-    const k = e.key.toLowerCase();
-    if (k in keys) keys[k] = false;
-    if (!e.shiftKey) keys.shift = false;
+addEventListener('keyup',e=>{
+    const k=e.key.toLowerCase();
+    if(k in keys) keys[k]=false;
+    if(!e.shiftKey) keys.shift=false;
 });
 
 /* ===================================================== */
-/* MOVEMENT */
+/* PHYSIQUE                                               */
 /* ===================================================== */
 
-function updateMovement() {
-    const running = keys.shift && stamina > 0 && keys.z;
-    const accel = running ? 0.05 : 0.025;
+const _fwd=new THREE.Vector3(), _right=new THREE.Vector3();
+const ACCEL=28, DRAG=8;
+let lastTime=performance.now();
 
-    stamina = running ? stamina - 0.45 : Math.min(100, stamina + 0.2);
-    document.getElementById('sp').style.width = stamina + "%";
+function physicsStep(dt){
+    const run=keys.shift&&stamina>0&&keys.z;
+    stamina=run?Math.max(0,stamina-45*dt):Math.min(100,stamina+20*dt);
+    document.getElementById('sp').style.width=stamina+'%';
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    forward.y = 0; right.y = 0;
-    forward.normalize(); right.normalize();
+    _fwd.set(0,0,-1).applyQuaternion(camera.quaternion); _fwd.y=0; _fwd.normalize();
+    _right.set(1,0,0).applyQuaternion(camera.quaternion); _right.y=0; _right.normalize();
 
-    if (keys.z) velocity.add(forward.multiplyScalar(accel));
-    if (keys.s) velocity.sub(forward.multiplyScalar(accel));
-    if (keys.q) velocity.sub(right.multiplyScalar(accel));
-    if (keys.d) velocity.add(right.multiplyScalar(accel));
+    const spd=ACCEL*(run?1.8:1);
+    if(keys.z){playerVel.x+=_fwd.x*spd*dt; playerVel.z+=_fwd.z*spd*dt;}
+    if(keys.s){playerVel.x-=_fwd.x*spd*dt; playerVel.z-=_fwd.z*spd*dt;}
+    if(keys.q){playerVel.x-=_right.x*spd*dt; playerVel.z-=_right.z*spd*dt;}
+    if(keys.d){playerVel.x+=_right.x*spd*dt; playerVel.z+=_right.z*spd*dt;}
 
-    velocity.multiplyScalar(0.9);
+    playerVel.x*=Math.exp(-DRAG*dt);
+    playerVel.z*=Math.exp(-DRAG*dt);
+    if(!grounded) playerVel.y+=GRAVITY*dt;
 
-    let nx = camera.position.x + velocity.x;
-    let nz = camera.position.z + velocity.z;
+    camera.position.addScaledVector(playerVel,dt);
 
-    for (const c of colliders) {
-        const dx = nx - c.x;
-        const dz = nz - c.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist < c.r) {
-            const angle = Math.atan2(dz, dx);
-            nx = c.x + Math.cos(angle) * c.r;
-            nz = c.z + Math.sin(angle) * c.r;
-            velocity.multiplyScalar(0.6);
+    const near=grid.get(gkey(camera.position.x,camera.position.z))||[];
+    for(const idx of near) resolveVsSphere(staticSpheres[idx]);
+
+    const gy=findY(camera.position.x,camera.position.z)+PLAYER_H;
+    if(camera.position.y<=gy){
+        camera.position.y=gy;
+        if(playerVel.y<0) playerVel.y=0;
+        grounded=true;
+    } else { grounded=false; }
+}
+
+/* ===================================================== */
+/* SCENT LINES                                            */
+/* ===================================================== */
+
+function updateScent(t){
+    for(const s of scentLines){
+        const pts=s.geo.attributes.position;
+        const age=t*s.speed+s.off;
+        for(let i=0;i<=SEG;i++){
+            const r=i/SEG;
+            pts.setXYZ(i,
+                s.bx + WIND.x*r*2.0 + s.dx*r + Math.sin(age+r*2.8)*0.22,
+                s.by + r*1.8        + Math.sin(age*1.1+r*1.6)*0.13,
+                s.bz + WIND.y*r*2.0 + s.dz*r + Math.cos(age*0.85+r*2.2)*0.18
+            );
         }
-    }
-
-    camera.position.x = nx;
-    camera.position.z = nz;
-
-    const groundY = findY(nx, nz) + 1.8;
-    jumpVel -= 0.012;
-    camera.position.y += jumpVel;
-
-    if (camera.position.y < groundY) {
-        camera.position.y = groundY;
-        grounded = true;
-        jumpVel = 0;
+        pts.needsUpdate=true;
+        const cycle=((age)%(Math.PI*2))/(Math.PI*2);
+        s.line.material.opacity=(0.08+Math.sin(t*0.6+s.phase)*0.04)*Math.max(0,Math.sin(cycle*Math.PI));
     }
 }
 
 /* ===================================================== */
-/* ANIMATION */
+/* BOUCLE                                                 */
 /* ===================================================== */
 
-function animate(t) {
+function animate(now){
     requestAnimationFrame(animate);
-    t *= 0.001;
+    const dt=Math.min((now-lastTime)/1000,0.05);
+    lastTime=now;
+    const t=now*0.001;
 
-    // Vent
-    for (const w of windObjects) {
-        w.mesh.rotation.z = Math.sin(t * w.speed + w.phase) * w.amp;
+    for(const f of fireflies){
+        f.light.position.y=f.by+Math.sin(t+f.phase)*0.6;
+        f.light.position.x=f.bx+Math.cos(t*0.2+f.phase)*1.5;
+        f.light.position.z=f.bz+Math.sin(t*0.18+f.phase)*1.5;
     }
 
-    // Lucioles
-    for (const f of fireflies) {
-        f.light.position.y = f.baseY + Math.sin(t + f.phase) * 0.5;
-        f.light.position.x += Math.cos(t * 0.3 + f.phase) * 0.01;
-    }
-
-    // Particules d'odeur — flottent vers le haut doucement
-    for (const s of scentParticles) {
-        const pos = s.positions;
-        const n = pos.length / 3;
-        for (let i = 0; i < n; i++) {
-            // montée lente + oscillation légère
-            pos[i * 3 + 1] += 0.003;
-            pos[i * 3]     += Math.sin(t * 0.8 + s.phases[i]) * 0.001;
-            // reset si trop haut
-            if (pos[i * 3 + 1] > s.baseY + 3.5) {
-                pos[i * 3]     = s.baseX + (Math.random() - 0.5) * 0.6;
-                pos[i * 3 + 1] = s.baseY;
-                pos[i * 3 + 2] = s.baseZ + (Math.random() - 0.5) * 0.6;
-            }
-        }
-        s.points.geometry.attributes.position.needsUpdate = true;
-        // opacité pulsante très légère
-        s.points.material.opacity = 0.12 + Math.sin(t * 1.2 + s.phases[0]) * 0.08;
-    }
-
-    if (controls.isLocked) updateMovement();
-
-    renderer.render(scene, camera);
+    updateScent(t);
+    if(controls.isLocked) physicsStep(dt);
+    renderer.render(scene,camera);
 }
 
-animate();
+animate(performance.now());
 
-/* ===================================================== */
-/* RESIZE */
-/* ===================================================== */
-
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(innerWidth,innerHeight);
 });
