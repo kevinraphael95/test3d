@@ -93,10 +93,9 @@ function simplex2(xin, yin) {
 // Fractales multi-octave comme Minecraft
 function fbm(x, z) {
     return (
-        simplex2(x * 0.003,  z * 0.003)  * 28 +  // grandes collines
-        simplex2(x * 0.012,  z * 0.012)  * 10 +  // collines moyennes
-        simplex2(x * 0.04,   z * 0.04)   * 4  +  // détails
-        simplex2(x * 0.12,   z * 0.12)   * 1.5   // micro-détails
+        simplex2(x * 0.002,  z * 0.002)  * 14 +  // grandes collines très douces
+        simplex2(x * 0.008,  z * 0.008)  * 5  +  // ondulations légères
+        simplex2(x * 0.025,  z * 0.025)  * 1.5   // micro-détails subtils
     );
 }
 
@@ -176,7 +175,7 @@ const dummy = new THREE.Object3D();
 for (let i = 0; i < GRASS_COUNT; i++) {
     const x = (Math.random() - 0.5) * 900;
     const z = (Math.random() - 0.5) * 900;
-    dummy.position.set(x, findY(x, z) + 0.6, z);
+    dummy.position.set(x, findY(x, z) + 0.0, z);
     dummy.scale.setScalar(0.7 + Math.random() * 1.8);
     dummy.rotation.y = Math.random() * Math.PI;
     dummy.updateMatrix();
@@ -217,14 +216,14 @@ for (let i = 0; i < FLOWER_COUNT; i++) {
     const y = findY(x, z);
     flowerPos[i*3]=x; flowerPos[i*3+1]=y; flowerPos[i*3+2]=z;
 
-    dummy.position.set(x, y + 0.35, z);
+    dummy.position.set(x, y + 0.0, z);
     dummy.rotation.set(0, Math.random() * Math.PI, 0);
     dummy.scale.set(1,1,1);
     dummy.updateMatrix();
     stemMesh.setMatrixAt(i, dummy.matrix);
 
     const ci = (Math.random() * NC) | 0;
-    dummy.position.set(x, y + 0.8, z);
+    dummy.position.set(x, y + 0.45, z);
     dummy.updateMatrix();
     FLOWER_BUCKETS[ci].setMatrixAt(bucketCounts[ci]++, dummy.matrix);
 }
@@ -279,7 +278,7 @@ for (let i = 0; i < ROCK_COUNT; i++) {
     const x = (Math.random()-.5)*800, z = (Math.random()-.5)*800;
     const y = findY(x, z);
     const s = 0.7 + Math.random()*1.5, sy = s*0.6;
-    dummy.position.set(x, y + sy*0.4, z);
+    dummy.position.set(x, y - sy*0.15, z);
     dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
     dummy.scale.set(s, sy, s);
     dummy.updateMatrix();
@@ -307,12 +306,12 @@ function spawnTree(x, z) {
 
     // TRONC : part du sol, monte jusqu'en haut du feuillage
     // On le prolonge légèrement sous le sol pour masquer le gap
-    const trunkH = h * 0.55; // le tronc monte jusqu'à ~55% de la hauteur totale
+    const trunkH = h * 0.6;
     const trunk  = new THREE.Mesh(
-        new THREE.CylinderGeometry(tr * 0.5, tr, trunkH + 2, 8),
+        new THREE.CylinderGeometry(tr * 0.5, tr, trunkH + 4, 8), // +4 = enterré profond
         trunkMat
     );
-    trunk.position.y = trunkH / 2 - 1; // -1 pour enterrer la base
+    trunk.position.y = trunkH / 2 - 2; //
     trunk.castShadow = true;
     tree.add(trunk);
 
