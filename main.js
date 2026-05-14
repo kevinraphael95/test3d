@@ -36,49 +36,64 @@ sun.position.set(200, 300, 100);
 sun.castShadow = true;
 sun.shadow.mapSize.width = 2048;
 sun.shadow.mapSize.height = 2048;
-sun.shadow.camera.left = -300;
-sun.shadow.camera.right = 300;
-sun.shadow.camera.top = 300;
+sun.shadow.camera.left   = -300;
+sun.shadow.camera.right  =  300;
+sun.shadow.camera.top    =  300;
 sun.shadow.camera.bottom = -300;
 scene.add(sun);
 
 /* ===================================================== */
-/* HEIGHTMAP — calcul O(1), remplace le raycaster */
+/* HEIGHTMAP — source unique de vérité                   */
 /* ===================================================== */
 
+const WORLD   = 1200;
 const HM_SIZE = 512;
-const HM_HALF = HM_SIZE / 2;
-const WORLD = 1200;
-const heightmap = new Float32Array(HM_SIZE * HM_SIZE);
 
+// Formule de hauteur — identique terrain + findY
+function heightFormula(x, z) {
+    return (
+        Math.sin(x * 0.025) * 8 +
+        Math.cos(z * 0.02)  * 6 +
+        Math.sin((x + z) * 0.01) * 12
+    );
+}
+
+// Grille précalculée
+const heightmap = new Float32Array(HM_SIZE * HM_SIZE);
 for (let row = 0; row < HM_SIZE; row++) {
     for (let col = 0; col < HM_SIZE; col++) {
-        const x = (col / HM_SIZE - 0.5) * WORLD;
-        const z = (row / HM_SIZE - 0.5) * WORLD;
-        heightmap[row * HM_SIZE + col] =
-            Math.sin(x * 0.025) * 8 +
-            Math.cos(z * 0.02) * 6 +
-            Math.sin((x + z) * 0.01) * 12;
+        const wx = (col / (HM_SIZE - 1) - 0.5) * WORLD;
+        const wz = (row / (HM_SIZE - 1) - 0.5) * WORLD;
+        heightmap[row * HM_SIZE + col] = heightFormula(wx, wz);
     }
 }
 
+// Interpolation bilinéaire — précis même sur terrain ondulé
 function findY(x, z) {
-    const col = Math.round((x / WORLD + 0.5) * HM_SIZE);
-    const row = Math.round((z / WORLD + 0.5) * HM_SIZE);
-    const c = Math.max(0, Math.min(HM_SIZE - 1, col));
-    const r = Math.max(0, Math.min(HM_SIZE - 1, row));
-    return heightmap[r * HM_SIZE + c];
+    const u  = (x / WORLD + 0.5) * (HM_SIZE - 1);
+    const v  = (z / WORLD + 0.5) * (HM_SIZE - 1);
+    const c0 = Math.max(0, Math.min(HM_SIZE - 2, Math.floor(u)));
+    const r0 = Math.max(0, Math.min(HM_SIZE - 2, Math.floor(v)));
+    const fu = u - c0;
+    const fv = v - r0;
+    const h00 = heightmap[ r0      * HM_SIZE + c0    ];
+    const h10 = heightmap[ r0      * HM_SIZE + c0 + 1];
+    const h01 = heightmap[(r0 + 1) * HM_SIZE + c0    ];
+    const h11 = heightmap[(r0 + 1) * HM_SIZE + c0 + 1];
+    return h00*(1-fu)*(1-fv) + h10*fu*(1-fv) + h01*(1-fu)*fv + h11*fu*fv;
 }
 
 /* ===================================================== */
-/* TERRAIN */
+/* TERRAIN                                               */
+/* PlaneGeometry non-rotaté : pos[i]=X, pos[i+1]=Z(!)  */
+/* pos[i+2] = hauteur (axe Y local, devient Y en monde) */
 /* ===================================================== */
 
 const groundGeo = new THREE.PlaneGeometry(WORLD, WORLD, 140, 140);
-const p = groundGeo.attributes.position.array;
+const pos = groundGeo.attributes.position.array;
 
-for (let i = 0; i < p.length; i += 3) {
-    p[i + 2] = findY(p[i], p[i + 1]);
+for (let i = 0; i < pos.length; i += 3) {
+    pos[i + 2] = heightFormula(pos[i], pos[i + 1]);
 }
 
 groundGeo.computeVertexNormals();
@@ -95,11 +110,11 @@ scene.add(ground);
 /* SYSTEMS */
 /* ===================================================== */
 
-const windObjects = [];   // { mesh, phase, speed, amp }
-const colliders  = [];   // { x, z, r }
+const windObjects = [];
+const colliders   = [];
 
 /* ===================================================== */
-/* GRASS — InstancedMesh unique */
+/* HERBE */
 /* ===================================================== */
 
 const GRASS_COUNT = 2500;
@@ -112,10 +127,11 @@ grassMesh.frustumCulled = false;
 scene.add(grassMesh);
 
 const dummy = new THREE.Object3D();
+
 for (let i = 0; i < GRASS_COUNT; i++) {
     const x = (Math.random() - 0.5) * 900;
     const z = (Math.random() - 0.5) * 900;
-    dummy.position.set(x, findY(x, z) + 0.5, z);
+    dummy.position.set(x, findY(x, z) + 0.6, z);
     dummy.scale.setScalar(0.7 + Math.random() * 1.8);
     dummy.rotation.y = Math.random() * Math.PI;
     dummy.updateMatrix();
@@ -124,11 +140,12 @@ for (let i = 0; i < GRASS_COUNT; i++) {
 grassMesh.instanceMatrix.needsUpdate = true;
 
 /* ===================================================== */
-/* FLOWERS — 2 InstancedMesh (tige + tête), shader wind */
+/* FLEURS */
 /* ===================================================== */
 
-const FLOWER_COUNT = 700;
+const FLOWER_COUNT      = 700;
 const FLOWER_COLORS_HEX = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
+const NC = FLOWER_COLORS_HEX.length;
 
 const stemMesh = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.02, 0.03, 0.7, 5),
@@ -138,43 +155,37 @@ const stemMesh = new THREE.InstancedMesh(
 stemMesh.frustumCulled = false;
 scene.add(stemMesh);
 
-// Une tête par couleur → 5 InstancedMesh de ~140 fleurs chacun
 const FLOWER_BUCKETS = FLOWER_COLORS_HEX.map(hex =>
     new THREE.InstancedMesh(
         new THREE.SphereGeometry(0.12, 6, 6),
-        new THREE.MeshStandardMaterial({
-            color: hex,
-            emissive: hex,
-            emissiveIntensity: 0.1
-        }),
-        Math.ceil(FLOWER_COUNT / FLOWER_COLORS_HEX.length) + 10
+        new THREE.MeshStandardMaterial({ color: hex, emissive: hex, emissiveIntensity: 0.1 }),
+        Math.ceil(FLOWER_COUNT / NC) + 10
     )
 );
 FLOWER_BUCKETS.forEach(m => { m.frustumCulled = false; scene.add(m); });
-const bucketCounts = new Int32Array(FLOWER_COLORS_HEX.length);
+const bucketCounts = new Int32Array(NC);
 
-// Tige wind : stocker phases dans un tableau parallèle
-const stemPhases = new Float32Array(FLOWER_COUNT);
+// Positions réelles stockées pour les scent particles
+const flowerPos = new Float32Array(FLOWER_COUNT * 3);
 
 for (let i = 0; i < FLOWER_COUNT; i++) {
     const x = (Math.random() - 0.5) * 700;
     const z = (Math.random() - 0.5) * 700;
     const y = findY(x, z);
-    const phase = Math.random() * 5;
-    stemPhases[i] = phase;
 
-    // Tige
+    flowerPos[i * 3]     = x;
+    flowerPos[i * 3 + 1] = y;
+    flowerPos[i * 3 + 2] = z;
+
     dummy.position.set(x, y + 0.35, z);
     dummy.rotation.set(0, Math.random() * Math.PI, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     stemMesh.setMatrixAt(i, dummy.matrix);
 
-    // Tête
-    const ci = Math.random() * FLOWER_COLORS_HEX.length | 0;
+    const ci = (Math.random() * NC) | 0;
     const bi = bucketCounts[ci]++;
     dummy.position.set(x, y + 0.8, z);
-    dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     FLOWER_BUCKETS[ci].setMatrixAt(bi, dummy.matrix);
 }
@@ -186,34 +197,31 @@ FLOWER_BUCKETS.forEach((m, i) => {
 });
 
 /* ===================================================== */
-/* SCENT PARTICLES — 1 seul Points global, shader GPU */
+/* SCENT PARTICLES */
 /* ===================================================== */
 
 const SCENT_PER_FLOWER = 5;
-const SCENT_TOTAL = FLOWER_COUNT * SCENT_PER_FLOWER;
+const SCENT_TOTAL      = FLOWER_COUNT * SCENT_PER_FLOWER;
 
 const scentPos    = new Float32Array(SCENT_TOTAL * 3);
 const scentPhase  = new Float32Array(SCENT_TOTAL);
 const scentBaseY  = new Float32Array(SCENT_TOTAL);
 const scentBaseXZ = new Float32Array(SCENT_TOTAL * 2);
 
-let si = 0;
 for (let fi = 0; fi < FLOWER_COUNT; fi++) {
-    // Récupérer position depuis la matrice de tige
-    const mat = new THREE.Matrix4();
-    stemMesh.getMatrixAt(fi, mat);
-    const bx = mat.elements[12];
-    const bz = mat.elements[14];
-    const by = mat.elements[13] + 0.45;  // approx base tête
+    const bx = flowerPos[fi * 3];
+    const by = flowerPos[fi * 3 + 1] + 0.8;
+    const bz = flowerPos[fi * 3 + 2];
 
-    for (let k = 0; k < SCENT_PER_FLOWER; k++, si++) {
-        scentPos[si * 3]     = bx + (Math.random() - 0.5) * 0.6;
-        scentPos[si * 3 + 1] = by + Math.random() * 1.5;
-        scentPos[si * 3 + 2] = bz + (Math.random() - 0.5) * 0.6;
-        scentPhase[si]        = Math.random() * Math.PI * 2;
-        scentBaseY[si]        = by;
-        scentBaseXZ[si * 2]   = bx;
-        scentBaseXZ[si * 2+1] = bz;
+    for (let k = 0; k < SCENT_PER_FLOWER; k++) {
+        const si = fi * SCENT_PER_FLOWER + k;
+        scentPos[si * 3]       = bx + (Math.random() - 0.5) * 0.6;
+        scentPos[si * 3 + 1]   = by + Math.random() * 1.5;
+        scentPos[si * 3 + 2]   = bz + (Math.random() - 0.5) * 0.6;
+        scentPhase[si]          = Math.random() * Math.PI * 2;
+        scentBaseY[si]          = by;
+        scentBaseXZ[si * 2]     = bx;
+        scentBaseXZ[si * 2 + 1] = bz;
     }
 }
 
@@ -221,59 +229,56 @@ const scentGeo = new THREE.BufferGeometry();
 scentGeo.setAttribute('position', new THREE.BufferAttribute(scentPos, 3));
 
 const scentMat = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 0.08,
-    transparent: true,
-    opacity: 0.18,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
+    color: 0xffffff, size: 0.08,
+    transparent: true, opacity: 0.18,
+    depthWrite: false, blending: THREE.AdditiveBlending
 });
-
 scene.add(new THREE.Points(scentGeo, scentMat));
 
 /* ===================================================== */
-/* ROCKS — InstancedMesh unique */
+/* ROCHERS */
 /* ===================================================== */
 
 const ROCK_COUNT = 120;
 const rockMesh = new THREE.InstancedMesh(
-    new THREE.DodecahedronGeometry(1.5, 0),
+    new THREE.DodecahedronGeometry(1, 0),
     new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 1 }),
     ROCK_COUNT
 );
-rockMesh.castShadow = true;
-rockMesh.receiveShadow = true;
+rockMesh.castShadow = rockMesh.receiveShadow = true;
 scene.add(rockMesh);
 
 for (let i = 0; i < ROCK_COUNT; i++) {
-    const x = (Math.random() - 0.5) * 800;
-    const z = (Math.random() - 0.5) * 800;
-    const y = findY(x, z) + 0.5;
-    const s = 0.7 + Math.random() * 1.5;
-    dummy.position.set(x, y, z);
+    const x  = (Math.random() - 0.5) * 800;
+    const z  = (Math.random() - 0.5) * 800;
+    const y  = findY(x, z);
+    const s  = 0.7 + Math.random() * 1.5;
+    const sy = s * 0.6;
+
+    dummy.position.set(x, y + sy * 0.5, z);  // ancré au sol
     dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-    dummy.scale.set(s, s * 0.6, s);
+    dummy.scale.set(s, sy, s);
     dummy.updateMatrix();
     rockMesh.setMatrixAt(i, dummy.matrix);
-    colliders.push({ x, z, r: s * 1.4 });
+    colliders.push({ x, z, r: s * 1.2 });
 }
 rockMesh.instanceMatrix.needsUpdate = true;
 
 /* ===================================================== */
-/* TREES */
+/* ARBRES */
 /* ===================================================== */
 
-const trunkGeo   = new THREE.CylinderGeometry(0.6, 1.1, 26, 8);
-const trunkMat   = new THREE.MeshStandardMaterial({ color: 0x1a0f0a });
-const coneMats   = [0x0f240f, 0x163016, 0x1c3d1c].map(c =>
+const trunkGeo = new THREE.CylinderGeometry(0.6, 1.1, 26, 8);
+const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1a0f0a });
+const coneMats = [0x0f240f, 0x163016, 0x1c3d1c].map(c =>
     new THREE.MeshStandardMaterial({ color: c })
 );
 
 function spawnTree(x, z) {
-    const y     = findY(x, z);
-    const tree  = new THREE.Group();
-    const h     = 18 + Math.random() * 18;
-    const tr    = 1 + Math.random() * 0.6;
+    const y    = findY(x, z);
+    const tree = new THREE.Group();
+    const h    = 18 + Math.random() * 18;
+    const tr   = 1  + Math.random() * 0.6;
 
     const trunk = new THREE.Mesh(trunkGeo, trunkMat);
     trunk.position.y = h / 2;
@@ -286,7 +291,7 @@ function spawnTree(x, z) {
         const size  = (1 - ratio) * (tr * 7) + 2;
         const cone  = new THREE.Mesh(
             new THREE.ConeGeometry(size, 7, 8),
-            coneMats[Math.random() * 3 | 0]
+            coneMats[(Math.random() * 3) | 0]
         );
         cone.position.y = h * 0.3 + ratio * h * 0.75;
         cone.castShadow = true;
@@ -303,11 +308,11 @@ for (let i = 0; i < 170; i++)
     spawnTree((Math.random() - 0.5) * 900, (Math.random() - 0.5) * 900);
 
 /* ===================================================== */
-/* FIREFLIES — max 12 vraies lumières, reste fake (mesh) */
+/* LUCIOLES */
 /* ===================================================== */
 
-const MAX_REAL_FF  = 12;
-const TOTAL_FF     = 90;
+const MAX_REAL_FF   = 12;
+const TOTAL_FF      = 90;
 const fireflyLights = [];
 const fireflyFakes  = [];
 
@@ -315,21 +320,21 @@ const ffFakeMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
 const ffFakeGeo = new THREE.SphereGeometry(0.08, 4, 4);
 
 for (let i = 0; i < TOTAL_FF; i++) {
-    const fx = (Math.random() - 0.5) * 800;
-    const fz = (Math.random() - 0.5) * 800;
-    const fy = findY(fx, fz) + 2 + Math.random() * 4;
+    const fx    = (Math.random() - 0.5) * 800;
+    const fz    = (Math.random() - 0.5) * 800;
+    const fy    = findY(fx, fz) + 2 + Math.random() * 4;
     const phase = Math.random() * 10;
 
     if (i < MAX_REAL_FF) {
         const light = new THREE.PointLight(0xffffaa, 0.7, 8);
         light.position.set(fx, fy, fz);
         scene.add(light);
-        fireflyLights.push({ light, baseY: fy, baseX: fx, phase });
+        fireflyLights.push({ light, baseY: fy, phase });
     } else {
         const mesh = new THREE.Mesh(ffFakeGeo, ffFakeMat);
         mesh.position.set(fx, fy, fz);
         scene.add(mesh);
-        fireflyFakes.push({ mesh, baseY: fy, baseX: fx, phase });
+        fireflyFakes.push({ mesh, baseY: fy, phase });
     }
 }
 
@@ -341,7 +346,7 @@ const controls = new PointerLockControls(camera, document.body);
 document.body.addEventListener('click', () => controls.lock());
 
 const velocity = new THREE.Vector3();
-const keys = { z: false, s: false, q: false, d: false, shift: false };
+const keys     = { z: false, s: false, q: false, d: false, shift: false };
 let jumpVel  = 0;
 let grounded = true;
 let stamina  = 100;
@@ -359,7 +364,7 @@ addEventListener('keyup', e => {
 });
 
 /* ===================================================== */
-/* MOVEMENT */
+/* MOUVEMENT */
 /* ===================================================== */
 
 const _fwd   = new THREE.Vector3();
@@ -377,8 +382,8 @@ function updateMovement() {
     _fwd.y = 0; _right.y = 0;
     _fwd.normalize(); _right.normalize();
 
-    if (keys.z) velocity.addScaledVector(_fwd,   accel);
-    if (keys.s) velocity.addScaledVector(_fwd,  -accel);
+    if (keys.z) velocity.addScaledVector(_fwd,    accel);
+    if (keys.s) velocity.addScaledVector(_fwd,   -accel);
     if (keys.q) velocity.addScaledVector(_right, -accel);
     if (keys.d) velocity.addScaledVector(_right,  accel);
 
@@ -416,7 +421,6 @@ function updateMovement() {
 /* ANIMATION */
 /* ===================================================== */
 
-// Throttle scent update : tous les 2 frames
 let frameCount = 0;
 
 function animate(t) {
@@ -424,24 +428,18 @@ function animate(t) {
     t *= 0.001;
     frameCount++;
 
-    // Vent — feuillage arbres
-    for (const w of windObjects) {
+    for (const w of windObjects)
         w.mesh.rotation.z = Math.sin(t * w.speed + w.phase) * w.amp;
-    }
 
-    // Lucioles vraies
     for (const f of fireflyLights) {
         f.light.position.y  = f.baseY + Math.sin(t + f.phase) * 0.5;
         f.light.position.x += Math.cos(t * 0.3 + f.phase) * 0.01;
     }
-
-    // Lucioles fakes
     for (const f of fireflyFakes) {
         f.mesh.position.y  = f.baseY + Math.sin(t + f.phase) * 0.5;
         f.mesh.position.x += Math.cos(t * 0.3 + f.phase) * 0.01;
     }
 
-    // Scent : update 1 frame sur 2
     if (frameCount % 2 === 0) {
         for (let i = 0; i < SCENT_TOTAL; i++) {
             scentPos[i * 3 + 1] += 0.003;
@@ -457,7 +455,6 @@ function animate(t) {
     }
 
     if (controls.isLocked) updateMovement();
-
     renderer.render(scene, camera);
 }
 
