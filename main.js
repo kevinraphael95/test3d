@@ -2,601 +2,572 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
 
 /* ===================================================== */
-/* RENDERER                                               */
+/* PERLIN NOISE 2D                                        */
 /* ===================================================== */
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
-document.body.appendChild(renderer.domElement);
+const _perm = new Uint8Array(512);
+{
+    const b = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) b[i] = i;
+    for (let i = 255; i > 0; i--) {
+        const j = Math.random() * (i + 1) | 0;
+        [b[i], b[j]] = [b[j], b[i]];
+    }
+    for (let i = 0; i < 512; i++) _perm[i] = b[i & 255];
+}
+
+function _fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function _lerp(a, b, t) { return a + (b - a) * t; }
+function _grad2(h, x, y) {
+    switch (h & 3) {
+        case 0: return  x + y;
+        case 1: return -x + y;
+        case 2: return  x - y;
+        default: return -x - y;
+    }
+}
+function perlin(x, y) {
+    const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+    const xf = x - Math.floor(x),   yf = y - Math.floor(y);
+    const u = _fade(xf), v = _fade(yf);
+    const aa = _perm[_perm[xi]     + yi],   ab = _perm[_perm[xi]     + yi + 1];
+    const ba = _perm[_perm[xi + 1] + yi],   bb = _perm[_perm[xi + 1] + yi + 1];
+    return _lerp(
+        _lerp(_grad2(aa, xf,     yf    ), _grad2(ba, xf - 1, yf    ), u),
+        _lerp(_grad2(ab, xf,     yf - 1), _grad2(bb, xf - 1, yf - 1), u),
+        v
+    );
+}
+function fbm(x, y) {
+    let v = 0, amp = 1, freq = 1, max = 0;
+    for (let i = 0; i < 6; i++) {
+        v   += perlin(x * freq, y * freq) * amp;
+        max += amp;
+        amp  *= 0.5;
+        freq *= 2.0;
+    }
+    return v / max;
+}
+
+// Hauteur en world-space — seule source de vérité
+function getHeight(wx, wz) {
+    const s = 0.003;
+    return fbm(wx * s, wz * s) * 40
+         + Math.sin(wx * 0.015) * 5
+         + Math.cos(wz * 0.012) * 4;
+}
 
 /* ===================================================== */
-/* SCENE / CAMERA                                         */
+/* SCENE                                                  */
 /* ===================================================== */
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x9bb4c7, 0.004);
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-camera.position.set(0, 10, 0);
+scene.fog = new THREE.FogExp2(0x9bb4c7, 0.0025);
+scene.background = new THREE.Color(0x87a7c4);
 
 /* ===================================================== */
-/* SKYBOX SHADER — dégradé dynamique                      */
+/* SKYBOX SHADER                                          */
 /* ===================================================== */
 
-const skyGeo = new THREE.SphereGeometry(1800, 16, 8);
-skyGeo.scale(-1, 1, 1);
-const skyUniforms = {
-    topColor:     { value: new THREE.Color(0x1a3a6e) },
-    horizonColor: { value: new THREE.Color(0x87bcd4) },
-    bottomColor:  { value: new THREE.Color(0x3d5a2a) },
-};
-const skyMat = new THREE.ShaderMaterial({
-    uniforms: skyUniforms,
-    vertexShader: `
-        varying vec3 vWorldPos;
-        void main() {
-            vWorldPos = position;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-        }`,
-    fragmentShader: `
-        uniform vec3 topColor;
-        uniform vec3 horizonColor;
-        uniform vec3 bottomColor;
-        varying vec3 vWorldPos;
-        void main() {
-            float h = normalize(vWorldPos).y;
-            vec3 col = h > 0.0
-                ? mix(horizonColor, topColor,    pow(h,  0.6))
-                : mix(horizonColor, bottomColor, pow(-h, 0.4));
-            gl_FragColor = vec4(col, 1.0);
-        }`,
-    side: THREE.BackSide,
-    depthWrite: false,
-});
-const skyMesh = new THREE.Mesh(skyGeo, skyMat);
-scene.add(skyMesh);
+const SUN_DIR = new THREE.Vector3(0.45, 0.35, -0.82).normalize();
+scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(4000, 32, 16),
+    new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false,
+        uniforms: {
+            topColor:   { value: new THREE.Color(0x1a3d6e) },
+            midColor:   { value: new THREE.Color(0x6aaed6) },
+            horizColor: { value: new THREE.Color(0xd4eaf8) },
+            sunDir:     { value: SUN_DIR.clone() },
+            sunColor:   { value: new THREE.Color(0xfffbe0) },
+            sunSize:    { value: 0.9990 },
+            glowSize:   { value: 0.9940 },
+        },
+        vertexShader: `
+            varying vec3 vDir;
+            void main(){
+                vDir = normalize((modelMatrix * vec4(position,1.0)).xyz);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+            }`,
+        fragmentShader: `
+            uniform vec3 topColor, midColor, horizColor, sunDir, sunColor;
+            uniform float sunSize, glowSize;
+            varying vec3 vDir;
+            void main(){
+                float h = vDir.y;
+                vec3 sky = mix(horizColor, midColor,  smoothstep(0.0, 0.25, h));
+                sky       = mix(sky,        topColor,  smoothstep(0.2, 0.80, h));
+                sky       = mix(vec3(0.08,0.06,0.04), sky, smoothstep(-0.04, 0.01, h));
+                float d   = dot(normalize(vDir), normalize(sunDir));
+                sky += sunColor * smoothstep(sunSize,  1.000, d);
+                sky += sunColor * smoothstep(glowSize, sunSize, d) * 0.5;
+                gl_FragColor = vec4(sky, 1.0);
+            }`
+    })
+));
 
 /* ===================================================== */
-/* LUMIÈRES                                               */
+/* CAMERA                                                 */
 /* ===================================================== */
 
-const hemi = new THREE.HemisphereLight(0xddeeff, 0x3d2f1b, 1.0);
-scene.add(hemi);
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 4000);
+camera.position.set(0, getHeight(0, 0) + 1.8, 0);
 
-const sun = new THREE.DirectionalLight(0xfff2d6, 2.5);
+/* ===================================================== */
+/* RENDERER                                               */
+/* ===================================================== */
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+document.body.appendChild(renderer.domElement);
+
+/* ===================================================== */
+/* LUMIERES                                               */
+/* ===================================================== */
+
+scene.add(new THREE.HemisphereLight(0xc8ddf5, 0x2a3d1a, 0.85));
+const sun = new THREE.DirectionalLight(0xfff5d0, 2.6);
+sun.position.copy(SUN_DIR).multiplyScalar(800);
 sun.castShadow = true;
-sun.shadow.mapSize.width = sun.shadow.mapSize.height = 2048;
-sun.shadow.camera.left = sun.shadow.camera.bottom = -200;
-sun.shadow.camera.right = sun.shadow.camera.top  =  200;
-sun.shadow.camera.far = 1500;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = sun.shadow.camera.bottom = -400;
+sun.shadow.camera.right = sun.shadow.camera.top   =  400;
+sun.shadow.bias = -0.0003;
 scene.add(sun);
 
-const moonLight = new THREE.DirectionalLight(0x3355aa, 0.0);
-scene.add(moonLight);
-
 /* ===================================================== */
-/* SPRITES SOLEIL & LUNE                                  */
+/* MATERIAUX PARTAGES                                     */
 /* ===================================================== */
 
-function makeCircleSprite(inner, outer, size) {
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(64,64,0, 64,64,64);
-    g.addColorStop(0,   inner);
-    g.addColorStop(0.35, outer);
-    g.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,128,128);
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: new THREE.CanvasTexture(c),
-        transparent: true, depthWrite: false,
-        blending: THREE.AdditiveBlending,
-    }));
-    sp.scale.set(size, size, 1);
-    return sp;
-}
+const matGround = new THREE.MeshStandardMaterial({ color: 0x243b1d, roughness: 1 });
+const matTrunk  = new THREE.MeshStandardMaterial({ color: 0x1a0f0a });
+const matRoot   = new THREE.MeshStandardMaterial({ color: 0x22150f });
+const matLeafs  = [
+    new THREE.MeshStandardMaterial({ color: 0x0f240f }),
+    new THREE.MeshStandardMaterial({ color: 0x163016 }),
+    new THREE.MeshStandardMaterial({ color: 0x1c3d1c }),
+];
+const matStem   = new THREE.MeshStandardMaterial({ color: 0x2d4c1e });
+const matRock   = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 1 });
+const matGrass  = new THREE.MeshStandardMaterial({ color: 0x3f6b2d });
+const SHARED_MATS = new Set([matGround, matTrunk, matRoot, matStem, matRock, matGrass, ...matLeafs]);
 
-const sunSprite  = makeCircleSprite('rgba(255,255,200,1)','rgba(255,180,30,0.5)', 130);
-const moonSprite = makeCircleSprite('rgba(220,230,255,1)','rgba(100,120,200,0.3)', 90);
-scene.add(sunSprite);
-scene.add(moonSprite);
+const FLOWER_COLORS = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
 
 /* ===================================================== */
-/* ÉTOILES — Points sphériques, suit la caméra           */
+/* CHUNK SYSTEM                                           */
 /* ===================================================== */
 
-const STAR_COUNT = 800;
-const starPos = new Float32Array(STAR_COUNT * 3);
-for (let i = 0; i < STAR_COUNT; i++) {
-    // Distribution uniforme sur sphère
-    const u = Math.random(), v = Math.random();
-    const theta = 2 * Math.PI * u;
-    const phi   = Math.acos(2 * v - 1);
-    const r     = 1600;
-    starPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
-    starPos[i*3+1] = Math.abs(r * Math.cos(phi)) + 50; // hémisphère haute seulement
-    starPos[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
-}
-const starGeo = new THREE.BufferGeometry();
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const starMat = new THREE.PointsMaterial({
-    color: 0xffffff, size: 1.8, sizeAttenuation: false,
-    transparent: true, opacity: 0.0, depthWrite: false,
-});
-const stars = new THREE.Points(starGeo, starMat);
-scene.add(stars);
+const CHUNK_SIZE    = 120;   // taille en unités world
+const CHUNK_SEGS    = 48;    // subdivisions (pairs pour éviter artefacts)
+const LOAD_RADIUS   = 3;
+const UNLOAD_RADIUS = 5;
+
+const loadedChunks   = new Map(); // key → { group, cx, cz }
+const chunkColliders = new Map(); // key → [{cx,cy,cz,r}]
+
+function chunkKey(cx, cz) { return `${cx},${cz}`; }
 
 /* ===================================================== */
-/* CYCLE JOUR / NUIT — 20 min = 1200 s                   */
+/* SYSTEMES GLOBAUX                                       */
 /* ===================================================== */
 
-const DAY_DURATION = 1200;
-const ORBIT_R = 1400;
+const windObjects = [];
+const scentLines  = [];
+const fireflyList = [];
+const WIND_DIR    = new THREE.Vector2(1.0, 0.3).normalize().multiplyScalar(1.4);
 
-const SKY = {
-    day:    { top:new THREE.Color(0x1a3a6e), horizon:new THREE.Color(0x87bcd4), bottom:new THREE.Color(0x3d5a2a) },
-    sunset: { top:new THREE.Color(0x1a1a3a), horizon:new THREE.Color(0xff7030), bottom:new THREE.Color(0x3d2a1a) },
-    night:  { top:new THREE.Color(0x050812), horizon:new THREE.Color(0x0d1a2e), bottom:new THREE.Color(0x0a0f08) },
-    dawn:   { top:new THREE.Color(0x1a1a3a), horizon:new THREE.Color(0xff9060), bottom:new THREE.Color(0x2a2218) },
-};
-
-function lerpSky(a, b, t) {
-    skyUniforms.topColor.value.copy(a.top).lerp(b.top, t);
-    skyUniforms.horizonColor.value.copy(a.horizon).lerp(b.horizon, t);
-    skyUniforms.bottomColor.value.copy(a.bottom).lerp(b.bottom, t);
-}
-
-function updateDayNight(elapsed) {
-    const dayAngle = (elapsed / DAY_DURATION) * Math.PI * 2;
-    const sinA = Math.sin(dayAngle);
-
-    const sunX =  Math.cos(dayAngle) * ORBIT_R;
-    const sunY =  Math.sin(dayAngle) * ORBIT_R;
-    const mnX  = -sunX, mnY = -sunY;
-
-    sun.position.set(sunX, sunY, ORBIT_R * 0.3);
-    moonLight.position.set(mnX, mnY, ORBIT_R * 0.3);
-
-    const cp = camera.position;
-    const sd = new THREE.Vector3(sunX, sunY, ORBIT_R*0.3).normalize();
-    const md = new THREE.Vector3(mnX,  mnY,  ORBIT_R*0.3).normalize();
-    sunSprite.position.copy(cp).addScaledVector(sd, 1400);
-    moonSprite.position.copy(cp).addScaledVector(md, 1400);
-
-    const sf = Math.max(0, sinA);
-    const mf = Math.max(0, -sinA);
-
-    sun.intensity       = sf * 2.8;
-    moonLight.intensity = 1.2 + mf * 1.0;
-    hemi.intensity      = 0.7 + sf * 0.3;
-
-    sunSprite.material.opacity  = Math.pow(sf, 0.5);
-    moonSprite.material.opacity = Math.pow(mf, 0.5);
-
-    renderer.toneMappingExposure = 1.1 + sf * 0.3;
-
-    scene.fog.color.lerpColors(new THREE.Color(0x060c18), new THREE.Color(0x9bb4c7), sf);
-
-    // Étoiles visibles la nuit
-    starMat.opacity = mf * 0.85;
-    stars.position.copy(camera.position);
-
-    // Phases ciel
-    const a = ((dayAngle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
-    if      (a < Math.PI/6)            lerpSky(SKY.night,  SKY.dawn,   a/(Math.PI/6));
-    else if (a < Math.PI*5/6) {
-        const t = Math.min((a - Math.PI/6) / (Math.PI*2/3) * 1.5, 1);
-        lerpSky(SKY.dawn, SKY.day, t);
+function spawnScentLines(group, x, y, z, color) {
+    const n = 2 + (Math.random() * 2 | 0);
+    for (let t = 0; t < n; t++) {
+        const SEG = 8;
+        const pts = [];
+        for (let i = 0; i <= SEG; i++) pts.push(new THREE.Vector3());
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({
+            color, transparent: true,
+            opacity: 0.15 + Math.random() * 0.12,
+            depthWrite: false, blending: THREE.AdditiveBlending
+        });
+        const line = new THREE.Line(geo, mat);
+        group.add(line);
+        scentLines.push({
+            line, geo,
+            baseX: x, baseY: y + 0.85, baseZ: z,
+            phase: Math.random() * Math.PI * 2,
+            speed: 0.4 + Math.random() * 0.6,
+            driftX: (Math.random() - 0.5) * 1.2,
+            driftZ: (Math.random() - 0.5) * 0.4,
+            offset: Math.random() * 3, SEG
+        });
     }
-    else if (a < Math.PI)              lerpSky(SKY.day,    SKY.sunset, (a-Math.PI*5/6)/(Math.PI/6));
-    else if (a < Math.PI*7/6)          lerpSky(SKY.sunset, SKY.night,  (a-Math.PI)/(Math.PI/6));
-    else {
-        skyUniforms.topColor.value.copy(SKY.night.top);
-        skyUniforms.horizonColor.value.copy(SKY.night.horizon);
-        skyUniforms.bottomColor.value.copy(SKY.night.bottom);
+}
+
+function updateScentLines(t) {
+    for (const s of scentLines) {
+        const pts = s.geo.attributes.position;
+        const age = t * s.speed + s.offset;
+        for (let i = 0; i <= s.SEG; i++) {
+            const r = i / s.SEG;
+            pts.setXYZ(i,
+                s.baseX + WIND_DIR.x * r * 2.5 + s.driftX * r + Math.sin(age + r * 3) * 0.3,
+                s.baseY + r * 2.2 + Math.sin(age * 1.3 + r * 2) * 0.18,
+                s.baseZ + WIND_DIR.y * r * 2.5 + s.driftZ * r + Math.cos(age * 0.9 + r * 2.5) * 0.22
+            );
+        }
+        pts.needsUpdate = true;
+        const cycle = ((t * s.speed + s.offset) % (Math.PI * 2)) / (Math.PI * 2);
+        s.line.material.opacity = (0.10 + Math.sin(t * 0.8 + s.phase) * 0.05) * Math.sin(cycle * Math.PI);
+        if (cycle < s.speed * 0.016) {
+            s.driftX = (Math.random() - 0.5) * 1.2;
+            s.driftZ = (Math.random() - 0.5) * 0.4;
+        }
     }
 }
 
 /* ===================================================== */
-/* SIMPLEX NOISE                                          */
+/* SEEDED RNG déterministe par chunk                      */
 /* ===================================================== */
 
-const SEED = Math.random() * 65536 | 0;
-console.log('Seed:', SEED);
-
-function buildPerm(seed) {
-    const p = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) p[i] = i;
-    let s = seed;
-    for (let i = 255; i > 0; i--) {
-        s = (s*1664525+1013904223) & 0xffffffff;
-        const j = (s>>>24)%(i+1);
-        [p[i],p[j]] = [p[j],p[i]];
-    }
-    const perm = new Uint8Array(512);
-    for (let i = 0; i < 512; i++) perm[i] = p[i&255];
-    return perm;
-}
-const perm = buildPerm(SEED);
-const GRAD = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
-
-function simplex2(xin, yin) {
-    const F2=0.5*(Math.sqrt(3)-1), G2=(3-Math.sqrt(3))/6;
-    const s=(xin+yin)*F2;
-    const i=Math.floor(xin+s)|0, j=Math.floor(yin+s)|0;
-    const t=(i+j)*G2;
-    const x0=xin-(i-t), y0=yin-(j-t);
-    const i1=x0>y0?1:0, j1=x0>y0?0:1;
-    const x1=x0-i1+G2, y1=y0-j1+G2, x2=x0-1+2*G2, y2=y0-1+2*G2;
-    const ii=i&255, jj=j&255;
-    const g0=perm[ii+perm[jj]]%8, g1=perm[ii+i1+perm[jj+j1]]%8, g2=perm[ii+1+perm[jj+1]]%8;
-    let n0=0,n1=0,n2=0;
-    let t0=0.5-x0*x0-y0*y0; if(t0>=0){t0*=t0; n0=t0*t0*(GRAD[g0][0]*x0+GRAD[g0][1]*y0);}
-    let t1=0.5-x1*x1-y1*y1; if(t1>=0){t1*=t1; n1=t1*t1*(GRAD[g1][0]*x1+GRAD[g1][1]*y1);}
-    let t2=0.5-x2*x2-y2*y2; if(t2>=0){t2*=t2; n2=t2*t2*(GRAD[g2][0]*x2+GRAD[g2][1]*y2);}
-    return 70*(n0+n1+n2);
-}
-
-function fbm(x, z) {
-    return simplex2(x*0.002,z*0.002)*14
-         + simplex2(x*0.008,z*0.008)*5
-         + simplex2(x*0.025,z*0.025)*1.5;
-}
-
-/* ===================================================== */
-/* HEIGHTMAP interpolée                                   */
-/* ===================================================== */
-
-const HSTEP = 0.5;
-const hCache = new Map();
-
-function heightAt(wx, wz) {
-    const kx = Math.round(wx/HSTEP)|0, kz = Math.round(wz/HSTEP)|0;
-    const key = kx*100003+kz;
-    let h = hCache.get(key);
-    if (h===undefined) { h=fbm(wx,wz); hCache.set(key,h); }
-    return h;
-}
-
-function findY(wx, wz) {
-    const x0=Math.floor(wx/HSTEP)*HSTEP, z0=Math.floor(wz/HSTEP)*HSTEP;
-    const fu=(wx-x0)/HSTEP, fv=(wz-z0)/HSTEP;
-    return heightAt(x0,   z0)  *(1-fu)*(1-fv)
-         + heightAt(x0+HSTEP,z0)*fu*(1-fv)
-         + heightAt(x0,z0+HSTEP)*(1-fu)*fv
-         + heightAt(x0+HSTEP,z0+HSTEP)*fu*fv;
-}
-
-/* ===================================================== */
-/* MATÉRIAUX & GÉOMÉTRIES PARTAGÉS                        */
-/* ===================================================== */
-
-const MAT = {
-    trunk:  new THREE.MeshStandardMaterial({ color:0x2a1a0e }),
-    cone0:  new THREE.MeshStandardMaterial({ color:0x0f240f }),
-    cone1:  new THREE.MeshStandardMaterial({ color:0x163016 }),
-    cone2:  new THREE.MeshStandardMaterial({ color:0x1c3d1c }),
-    rock:   new THREE.MeshStandardMaterial({ color:0x666666, roughness:1 }),
-    ground: new THREE.MeshStandardMaterial({ color:0x243b1d, roughness:1 }),
-    stem:   new THREE.MeshStandardMaterial({ color:0x2d4c1e }),
-    grass:  new THREE.MeshStandardMaterial({ color:0x3f6b2d }),
-    ff:     new THREE.MeshBasicMaterial({ color:0xffffaa }),
-};
-const CONE_MATS       = [MAT.cone0, MAT.cone1, MAT.cone2];
-const FLOWER_COLORS   = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
-const flowerMatsCache = {};
-
-function flowerMat(hex) {
-    if (!flowerMatsCache[hex])
-        flowerMatsCache[hex] = new THREE.MeshStandardMaterial({ color:hex, emissive:hex, emissiveIntensity:0.1 });
-    return flowerMatsCache[hex];
-}
-
-const GEO = {
-    grass:  new THREE.CylinderGeometry(0.015,0.04,0.5,3),
-    ff:     new THREE.SphereGeometry(0.07,4,4),
-    stem:   new THREE.CylinderGeometry(0.025,0.035,0.8,5),
-    flower: new THREE.SphereGeometry(0.14,6,6),
-    rock:   new THREE.DodecahedronGeometry(1,0),
-};
-
-/* ===================================================== */
-/* SYSTÈMES GLOBAUX                                       */
-/* ===================================================== */
-
-const windObjects     = [];
-const fireflyData     = [];
-const globalColliders = [];
-
-/* ===================================================== */
-/* CHUNKS                                                 */
-/* ===================================================== */
-
-const CHUNK_SIZE   = 80;
-const CHUNK_SEGS   = 18;  // était 26
-const CHUNK_RADIUS = 2;   // était 3 — 5x5 chunks au lieu de 7x7
-
-const loadedChunks = new Map();
-const chunkFadeIn  = new Map();
-
-function seededRng(seed) {
-    let s = (seed ^ 0xdeadbeef) | 0;
+function seededRng(cx, cz) {
+    let s = ((cx * 73856093) ^ (cz * 19349663)) >>> 0;
+    if (s === 0) s = 1;
     return () => {
-        s = Math.imul(s^(s>>>16), 0x45d9f3b);
-        s = Math.imul(s^(s>>>16), 0x45d9f3b);
-        s ^= s>>>16;
-        return (s>>>0) / 0xffffffff;
+        s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+        s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+        s = (s ^ (s >>> 16)) >>> 0;
+        return s / 0x100000000;
     };
 }
 
-function generateChunk(cx, cz) {
-    const key = cx+','+cz;
-    if (loadedChunks.has(key)) return;
-    loadedChunks.set(key, null); // réservation immédiate
-    requestAnimationFrame(() => _buildChunk(cx, cz, key));
-}
+/* ===================================================== */
+/* BUILD CHUNK TERRAIN                                    */
+/* ===================================================== */
+/*
+ * PlaneGeometry(W, H, segX, segZ) non-rotatée :
+ *   - vertices en espace LOCAL : X ∈ [-W/2, W/2], Y ∈ [-H/2, H/2], Z = 0
+ *   - après rotation.x = -PI/2 : local X → world X, local Y → world Z, local Z → world Y
+ *
+ * Pour un chunk centré en (cx*CHUNK_SIZE, 0, cz*CHUNK_SIZE) :
+ *   world_X = ox + local_X
+ *   world_Z = oz + local_Y   ← local Y devient world Z après la rotation
+ *
+ * On fixe donc pos[i+2] = getHeight(ox + pos[i], oz + pos[i+1])
+ * AVANT d'appliquer la rotation.
+ */
 
-function _buildChunk(cx, cz, key) {
-    if (!loadedChunks.has(key)) return; // déchargé entre temps
+function buildChunkTerrain(cx, cz) {
+    const ox = cx * CHUNK_SIZE;  // centre world X du chunk
+    const oz = cz * CHUNK_SIZE;  // centre world Z du chunk
 
-    const originX = cx * CHUNK_SIZE;
-    const originZ = cz * CHUNK_SIZE;
-    const rng     = seededRng(cx*73856093 ^ cz*19349663);
-    const group   = new THREE.Group();
-    const localColliders = [];
-
-    /* Terrain */
     const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGS, CHUNK_SEGS);
-    const vp  = geo.attributes.position.array;
-    for (let i = 0; i < vp.length; i += 3)
-        vp[i+2] = fbm(originX+vp[i], originZ-vp[i+1]);
-    geo.computeVertexNormals();
-    const terrain = new THREE.Mesh(geo, MAT.ground);
-    terrain.rotation.x = -Math.PI/2;
-    terrain.position.set(originX, 0, originZ);
-    terrain.receiveShadow = true;
-    group.add(terrain);
+    const pos = geo.attributes.position.array;
 
-    /* Arbres */
-    const treeCount = 4 + (rng()*6|0);
-    for (let i = 0; i < treeCount; i++) {
-        const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
-        const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
-        const gy = findY(wx, wz);
-
-        const h  = 16 + rng()*18;
-        const tr = 0.6 + rng()*0.6;
-        const trunkH = h * 0.55;
-
-        const tg = new THREE.Group();
-
-        const trunk = new THREE.Mesh(
-            new THREE.CylinderGeometry(tr*0.55, tr*1.1, trunkH+5, 8),
-            MAT.trunk
-        );
-        trunk.position.y = trunkH/2 - 2.5;
-        trunk.castShadow = true;
-        tg.add(trunk);
-
-        const layers = 7 + (rng()*5|0);
-        for (let li = 0; li < layers; li++) {
-            const ratio  = li / (layers-1);
-            const coneY  = ratio * h * 0.92;
-            const radius = tr*10*(1-ratio*0.72) + 2.2;
-            const coneH  = (h/layers) * 2.0;
-            const cone   = new THREE.Mesh(
-                new THREE.ConeGeometry(radius, coneH, 8),
-                CONE_MATS[(rng()*3)|0]
-            );
-            cone.position.y = coneY;
-            cone.castShadow = true;
-            tg.add(cone);
-            windObjects.push({ mesh:cone, phase:rng()*10, speed:0.5, amp:0.013 });
-        }
-
-        tg.position.set(wx, gy, wz);
-        group.add(tg);
-        localColliders.push({ type:'cylinder', x:wx, y:gy, z:wz, r:tr*1.5, h:trunkH+5 });
+    for (let i = 0; i < pos.length; i += 3) {
+        // pos[i]   = local X  → world X = ox + local X
+        // pos[i+1] = local Y  → world Z = oz + local Y  (après rotation)
+        // pos[i+2] = local Z  → world Y = hauteur
+        const wx = ox + pos[i];
+        const wz = oz + pos[i + 1];
+        pos[i + 2] = getHeight(wx, wz);
     }
 
-    /* Rochers */
-    const rockCount = 3 + (rng()*7|0);
-    for (let i = 0; i < rockCount; i++) {
-        const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
-        const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
-        const gy = findY(wx, wz);
-        const sx = 0.9+rng()*1.8, sy = sx*0.65, sz = 0.9+rng()*1.8;
+    geo.computeVertexNormals();
 
-        const rock = new THREE.Mesh(GEO.rock, MAT.rock);
-        rock.scale.set(sx, sy, sz);
-        rock.rotation.set(rng()*Math.PI, rng()*Math.PI, rng()*Math.PI);
-        rock.position.set(wx, gy+sy*0.5, wz);
+    const mesh = new THREE.Mesh(geo, matGround);
+    mesh.rotation.x = -Math.PI / 2;          // après: localX→worldX, localY→worldZ, localZ→worldY
+    mesh.position.set(ox, 0, oz);             // centre du chunk
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+/* ===================================================== */
+/* BUILD CHUNK OBJETS                                     */
+/* ===================================================== */
+
+function buildChunkObjects(cx, cz, group) {
+    const rng = seededRng(cx, cz);
+    const ox = cx * CHUNK_SIZE;
+    const oz = cz * CHUNK_SIZE;
+    const half = CHUNK_SIZE / 2;
+    const cols = [];
+
+    // Helper : position aléatoire dans le chunk en world-space
+    const rpos = () => ({
+        x: ox + (rng() - 0.5) * CHUNK_SIZE,
+        z: oz + (rng() - 0.5) * CHUNK_SIZE
+    });
+
+    /* ---- ARBRES ---- */
+    const treeCount = 4 + (rng() * 6 | 0);
+    for (let i = 0; i < treeCount; i++) {
+        const { x, z } = rpos();
+        const y      = getHeight(x, z);
+        const height = 18 + rng() * 18;
+        const tr     = 1  + rng() * 0.6;
+        const tree   = new THREE.Group();
+
+        // Tronc (prolongé sous terre pour masquer les gaps)
+        const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(tr * 0.55, tr * 1.1, height + 10, 8),
+            matTrunk
+        );
+        trunk.position.y = height / 2 - 5;
+        trunk.castShadow = true;
+        tree.add(trunk);
+
+        // Racines
+        for (let r = 0; r < 5; r++) {
+            const angle  = (Math.PI * 2 / 5) * r;
+            const rLen   = 2.5 + rng() * 1.5;
+            const rThick = 0.12 + rng() * 0.08;
+            const pivot  = new THREE.Group();
+            pivot.position.set(Math.cos(angle) * tr * 0.85, 0.1, Math.sin(angle) * tr * 0.85);
+            pivot.rotation.y = angle;
+            pivot.rotation.z = Math.PI / 2 + 0.75 + rng() * 0.35;
+            const rootMesh = new THREE.Mesh(
+                new THREE.CylinderGeometry(rThick * 0.35, rThick, rLen, 5),
+                matRoot
+            );
+            rootMesh.position.y = -rLen / 2;
+            pivot.add(rootMesh);
+            tree.add(pivot);
+        }
+
+        // Feuillage
+        const layers = 7 + (rng() * 4 | 0);
+        for (let l = 0; l < layers; l++) {
+            const ratio = l / layers;
+            const size  = (1 - ratio) * (tr * 7) + 2;
+            const cone  = new THREE.Mesh(
+                new THREE.ConeGeometry(size, 7, 8),
+                matLeafs[rng() * 3 | 0]
+            );
+            cone.position.y = height * 0.28 + ratio * height * 0.75;
+            cone.castShadow = true;
+            tree.add(cone);
+            windObjects.push({ mesh: cone, phase: rng() * 10, speed: 0.5, amp: 0.015 });
+        }
+
+        tree.position.set(x, y, z);
+        group.add(tree);
+        cols.push({ cx: x, cy: y + 4,  cz: z, r: tr + 1.0 });
+        cols.push({ cx: x, cy: y + 12, cz: z, r: tr + 0.8 });
+    }
+
+    /* ---- ROCHERS ---- */
+    const rockCount = 2 + (rng() * 5 | 0);
+    for (let i = 0; i < rockCount; i++) {
+        const { x, z } = rpos();
+        const y    = getHeight(x, z);
+        const size = 1 + rng() * 2;
+        const rock = new THREE.Mesh(
+            new THREE.DodecahedronGeometry(size, 0),
+            matRock
+        );
+        rock.position.set(x, y + size * 0.3, z);
+        rock.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+        rock.scale.y = 0.6;
         rock.castShadow = rock.receiveShadow = true;
         group.add(rock);
-        localColliders.push({ type:'box', x:wx, y:gy, z:wz, hw:sx*1.1, hh:sy, hd:sz*1.1 });
+        cols.push({ cx: x, cy: y + size * 0.3, cz: z, r: size * 0.9 });
     }
 
-    /* Fleurs */
-    const flowerCount = 25 + (rng()*50|0);
+    /* ---- FLEURS ---- */
+    const flowerCount = 10 + (rng() * 25 | 0);
     for (let i = 0; i < flowerCount; i++) {
-        const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.9;
-        const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.9;
-        const gy = findY(wx, wz);
-
-        const stem = new THREE.Mesh(GEO.stem, MAT.stem);
-        stem.position.set(wx, gy+0.4, wz);
-        group.add(stem);
-
-        const fc   = FLOWER_COLORS[(rng()*FLOWER_COLORS.length)|0];
-        const head = new THREE.Mesh(GEO.flower, flowerMat(fc));
-        head.position.set(wx, gy+0.9, wz);
-        group.add(head);
+        const { x, z } = rpos();
+        const y     = getHeight(x, z);
+        const color = FLOWER_COLORS[rng() * FLOWER_COLORS.length | 0];
+        const g     = new THREE.Group();
+        const stem  = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.7, 5), matStem);
+        stem.position.y = 0.35;
+        const head = new THREE.Mesh(
+            new THREE.SphereGeometry(0.12, 6, 6),
+            new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.1 })
+        );
+        head.position.y = 0.8;
+        g.add(stem, head);
+        g.position.set(x, y, z);
+        group.add(g);
+        windObjects.push({ mesh: g, phase: rng() * 5, speed: 2, amp: 0.04 });
+        spawnScentLines(group, x, y, z, color);
     }
 
-    /* Herbe instanciée */
-    const grassCount = 40 + (rng()*50|0);
-    const gMesh = new THREE.InstancedMesh(GEO.grass, MAT.grass, grassCount);
-    gMesh.frustumCulled = false;
-    const dummy = new THREE.Object3D();
+    /* ---- HERBE instanciée ---- */
+    const grassCount = 80 + (rng() * 120 | 0);
+    const grassMesh  = new THREE.InstancedMesh(
+        new THREE.CylinderGeometry(0.02, 0.05, 1.2, 3),
+        matGrass, grassCount
+    );
+    const d = new THREE.Object3D();
     for (let i = 0; i < grassCount; i++) {
-        const wx2 = originX + (rng()-0.5)*CHUNK_SIZE;
-        const wz2 = originZ + (rng()-0.5)*CHUNK_SIZE;
-        dummy.position.set(wx2, findY(wx2,wz2)+0.7, wz2);
-        dummy.scale.setScalar(0.5+rng()*0.8);
-        dummy.rotation.y = rng()*Math.PI;
-        dummy.updateMatrix();
-        gMesh.setMatrixAt(i, dummy.matrix);
+        const { x, z } = rpos();
+        const y = getHeight(x, z);
+        d.position.set(x, y + 0.5, z);
+        d.scale.setScalar(0.7 + rng() * 1.8);
+        d.rotation.y = rng() * Math.PI;
+        d.updateMatrix();
+        grassMesh.setMatrixAt(i, d.matrix);
     }
-    gMesh.instanceMatrix.needsUpdate = true;
-    group.add(gMesh);
+    group.add(grassMesh);
 
-    /* Lucioles */
-    const ffCount = 2 + (rng()*6|0);
+    /* ---- LUCIOLES ---- */
+    const ffCount = 1 + (rng() * 3 | 0);
     for (let i = 0; i < ffCount; i++) {
-        const wx2 = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
-        const wz2 = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
-        const fy  = findY(wx2,wz2)+2+rng()*4;
-        const m   = new THREE.Mesh(GEO.ff, MAT.ff);
-        m.position.set(wx2, fy, wz2);
-        group.add(m);
-        fireflyData.push({ mesh:m, baseY:fy, phase:rng()*10 });
+        const { x, z } = rpos();
+        const y     = getHeight(x, z) + 2 + rng() * 4;
+        const light = new THREE.PointLight(0xffffaa, 0.65, 9);
+        light.position.set(x, y, z);
+        group.add(light);
+        fireflyList.push({ light, baseY: y, baseX: x, baseZ: z, phase: rng() * 10 });
     }
 
-    // Fade-in : cloner les matériaux et mettre opacity=0
-    group.traverse(obj => {
-        if (obj.isMesh) {
-            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-            const cloned = mats.map(m => {
-                const c = m.clone();
-                c._baseOpacity = c.opacity ?? 1;
-                c.transparent  = true;
-                c.opacity      = 0;
-                return c;
-            });
-            obj.material = Array.isArray(obj.material) ? cloned : cloned[0];
-        }
-    });
-
-    globalColliders.push(...localColliders);
-    scene.add(group);
-    loadedChunks.set(key, { group, localColliders });
-    chunkFadeIn.set(key, { group, alpha: 0 });
+    return cols;
 }
 
-function unloadChunk(cx, cz) {
-    const key = cx+','+cz;
-    const data = loadedChunks.get(key);
-    if (!data) { loadedChunks.delete(key); return; }
+/* ===================================================== */
+/* LOAD / UNLOAD                                          */
+/* ===================================================== */
 
-    scene.remove(data.group);
-    data.group.traverse(obj => {
-        if (!obj.isMesh) return;
-        // Ne pas disposer les géos/mats partagés
-        if (obj.geometry && obj.geometry !== GEO.grass && obj.geometry !== GEO.ff &&
-            obj.geometry !== GEO.stem && obj.geometry !== GEO.flower && obj.geometry !== GEO.rock)
-            obj.geometry.dispose();
-        if (obj.material?._baseOpacity !== undefined) {
-            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-            mats.forEach(m => m.dispose());
+function loadChunk(cx, cz) {
+    const key = chunkKey(cx, cz);
+    if (loadedChunks.has(key)) return;
+
+    const group = new THREE.Group();
+    group.add(buildChunkTerrain(cx, cz));
+    const cols = buildChunkObjects(cx, cz, group);
+
+    scene.add(group);
+    loadedChunks.set(key, { group, cx, cz });
+    chunkColliders.set(key, cols);
+}
+
+function unloadChunk(key) {
+    const chunk = loadedChunks.get(key);
+    if (!chunk) return;
+
+    const members = new Set();
+    chunk.group.traverse(o => members.add(o));
+
+    for (let i = windObjects.length - 1; i >= 0; i--)
+        if (members.has(windObjects[i].mesh)) windObjects.splice(i, 1);
+    for (let i = fireflyList.length - 1; i >= 0; i--)
+        if (members.has(fireflyList[i].light)) fireflyList.splice(i, 1);
+    for (let i = scentLines.length - 1; i >= 0; i--)
+        if (members.has(scentLines[i].line)) scentLines.splice(i, 1);
+
+    scene.remove(chunk.group);
+    chunk.group.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material && !SHARED_MATS.has(o.material)) {
+            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+            else o.material.dispose();
         }
-    });
-
-    for (const c of data.localColliders) {
-        const idx = globalColliders.indexOf(c);
-        if (idx !== -1) globalColliders.splice(idx, 1);
-    }
-    data.group.traverse(obj => {
-        let fi = fireflyData.findIndex(f => f.mesh === obj);
-        if (fi !== -1) fireflyData.splice(fi, 1);
-        let wi = windObjects.findIndex(w => w.mesh === obj);
-        if (wi !== -1) windObjects.splice(wi, 1);
     });
 
     loadedChunks.delete(key);
-    chunkFadeIn.delete(key);
+    chunkColliders.delete(key);
 }
 
-let lastCX = Infinity, lastCZ = Infinity;
+let lastChunkTick = 0;
 
-function updateChunks(px, pz) {
-    const cx = Math.round(px/CHUNK_SIZE);
-    const cz = Math.round(pz/CHUNK_SIZE);
-    if (cx === lastCX && cz === lastCZ) return;
-    lastCX = cx; lastCZ = cz;
+function updateChunks() {
+    const pcx = Math.round(camera.position.x / CHUNK_SIZE);
+    const pcz = Math.round(camera.position.z / CHUNK_SIZE);
 
-    for (let dx = -CHUNK_RADIUS; dx <= CHUNK_RADIUS; dx++)
-        for (let dz = -CHUNK_RADIUS; dz <= CHUNK_RADIUS; dz++)
-            generateChunk(cx+dx, cz+dz);
+    for (let dz = -LOAD_RADIUS; dz <= LOAD_RADIUS; dz++)
+    for (let dx = -LOAD_RADIUS; dx <= LOAD_RADIUS; dx++)
+        if (Math.hypot(dx, dz) <= LOAD_RADIUS)
+            loadChunk(pcx + dx, pcz + dz);
 
-    for (const [key] of loadedChunks) {
-        const [kcx,kcz] = key.split(',').map(Number);
-        if (Math.abs(kcx-cx) > CHUNK_RADIUS+1 || Math.abs(kcz-cz) > CHUNK_RADIUS+1)
-            unloadChunk(kcx, kcz);
-    }
+    for (const [key, chunk] of loadedChunks)
+        if (Math.hypot(chunk.cx - pcx, chunk.cz - pcz) > UNLOAD_RADIUS)
+            unloadChunk(key);
 }
 
 /* ===================================================== */
-/* PHYSIQUE 3D                                            */
+/* PHYSIQUE CAPSULE                                       */
 /* ===================================================== */
 
-const PLAYER_R = 0.4;
-const PLAYER_H = 1.8;
+const PLAYER_RADIUS = 0.5;
+const PLAYER_HEIGHT = 1.8;
+const GRAVITY       = -18;
+const JUMP_VEL      = 7;
+const MOVE_ACCEL    = 28;
+const MOVE_DRAG     = 8;
 
-function resolveColliders(nx, ny, nz) {
-    let onTop = false;
+const playerVel = new THREE.Vector3();
+let   grounded  = false;
+let   stamina   = 100;
 
-    for (const c of globalColliders) {
+const _fwd  = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up    = new THREE.Vector3(0, 1, 0);
 
-        if (c.type === 'cylinder') {
-            const dx = nx-c.x, dz = nz-c.z;
-            const distXZ = Math.sqrt(dx*dx+dz*dz);
-            const cTop   = c.y + c.h;
-            const pBot   = ny - PLAYER_H;
+function resolveSphere(s) {
+    const cy_lo = camera.position.y - PLAYER_HEIGHT + PLAYER_RADIUS;
+    const cy_hi = camera.position.y - PLAYER_RADIUS;
+    const ccy   = Math.max(cy_lo, Math.min(cy_hi, s.cy));
+    const dx = camera.position.x - s.cx;
+    const dy = camera.position.y - ccy;
+    const dz = camera.position.z - s.cz;
+    const d2 = dx*dx + dy*dy + dz*dz;
+    const minD = s.r + PLAYER_RADIUS;
+    if (d2 >= minD * minD) return;
+    const d = Math.sqrt(d2) || 0.001;
+    const pen = minD - d;
+    camera.position.x += (dx / d) * pen;
+    camera.position.z += (dz / d) * pen;
+    const vd = playerVel.x * (dx/d) + playerVel.z * (dz/d);
+    if (vd < 0) { playerVel.x -= vd * (dx/d); playerVel.z -= vd * (dz/d); }
+}
 
-            if (distXZ < c.r+PLAYER_R && ny > c.y && pBot < cTop) {
-                if (pBot >= cTop - 0.6) {
-                    ny    = cTop + PLAYER_H;
-                    onTop = true;
-                } else {
-                    const a = Math.atan2(dz,dx);
-                    nx = c.x + Math.cos(a)*(c.r+PLAYER_R);
-                    nz = c.z + Math.sin(a)*(c.r+PLAYER_R);
-                }
-            }
+function physicsStep(dt) {
+    const running = keys.shift && stamina > 0 && keys.z;
+    stamina = running ? Math.max(0, stamina - 45*dt) : Math.min(100, stamina + 20*dt);
+    document.getElementById('sp').style.width = stamina + '%';
 
-        } else if (c.type === 'box') {
-            const boxTop = c.y + c.hh;
-            const pBot   = ny - PLAYER_H;
-            const inX    = nx > c.x-c.hw-PLAYER_R && nx < c.x+c.hw+PLAYER_R;
-            const inZ    = nz > c.z-c.hd-PLAYER_R && nz < c.z+c.hd+PLAYER_R;
-            const inY    = ny > c.y && pBot < boxTop;
+    camera.getWorldDirection(_fwd); _fwd.y = 0; _fwd.normalize();
+    _right.crossVectors(_fwd, _up).negate().normalize();
 
-            if (inX && inZ && inY) {
-                if (pBot >= boxTop - 0.6) {
-                    ny    = boxTop + PLAYER_H;
-                    onTop = true;
-                } else {
-                    const ol = nx-(c.x-c.hw-PLAYER_R);
-                    const or2= (c.x+c.hw+PLAYER_R)-nx;
-                    const of2= nz-(c.z-c.hd-PLAYER_R);
-                    const ob = (c.z+c.hd+PLAYER_R)-nz;
-                    const m  = Math.min(ol,or2,of2,ob);
-                    if      (m===ol)  nx = c.x-c.hw-PLAYER_R;
-                    else if (m===or2) nx = c.x+c.hw+PLAYER_R;
-                    else if (m===of2) nz = c.z-c.hd-PLAYER_R;
-                    else              nz = c.z+c.hd+PLAYER_R;
-                }
-            }
-        }
+    const spd = MOVE_ACCEL * (running ? 1.8 : 1);
+    if (keys.z) { playerVel.x += _fwd.x  * spd*dt; playerVel.z += _fwd.z  * spd*dt; }
+    if (keys.s) { playerVel.x -= _fwd.x  * spd*dt; playerVel.z -= _fwd.z  * spd*dt; }
+    if (keys.q) { playerVel.x -= _right.x * spd*dt; playerVel.z -= _right.z * spd*dt; }
+    if (keys.d) { playerVel.x += _right.x * spd*dt; playerVel.z += _right.z * spd*dt; }
+
+    const drag = Math.exp(-MOVE_DRAG * dt);
+    playerVel.x *= drag; playerVel.z *= drag;
+    if (!grounded) playerVel.y += GRAVITY * dt;
+
+    camera.position.x += playerVel.x * dt;
+    camera.position.y += playerVel.y * dt;
+    camera.position.z += playerVel.z * dt;
+
+    // Collisions sphères proches
+    const pcx = Math.round(camera.position.x / CHUNK_SIZE);
+    const pcz = Math.round(camera.position.z / CHUNK_SIZE);
+    for (let dz = -1; dz <= 1; dz++)
+    for (let dx = -1; dx <= 1; dx++) {
+        const cols = chunkColliders.get(chunkKey(pcx+dx, pcz+dz));
+        if (cols) for (const s of cols) resolveSphere(s);
     }
 
-    return { x:nx, y:ny, z:nz, onTop };
+    // Sol
+    const gy = getHeight(camera.position.x, camera.position.z) + PLAYER_HEIGHT;
+    if (camera.position.y <= gy) {
+        camera.position.y = gy;
+        if (playerVel.y < 0) playerVel.y = 0;
+        grounded = true;
+    } else {
+        grounded = false;
+    }
 }
 
 /* ===================================================== */
@@ -606,17 +577,12 @@ function resolveColliders(nx, ny, nz) {
 const controls = new PointerLockControls(camera, document.body);
 document.body.addEventListener('click', () => controls.lock());
 
-const velocity = new THREE.Vector3();
-const keys = { z:false, s:false, q:false, d:false, shift:false };
-let jumpVel  = 0;
-let grounded = true;
-let stamina  = 100;
-
+const keys = { z: false, s: false, q: false, d: false, shift: false };
 addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
     if (k in keys) keys[k] = true;
     if (e.shiftKey) keys.shift = true;
-    if (e.code === 'Space' && grounded) { grounded = false; jumpVel = 0.32; }
+    if (e.code === 'Space' && grounded) { playerVel.y = JUMP_VEL; grounded = false; }
 });
 addEventListener('keyup', e => {
     const k = e.key.toLowerCase();
@@ -625,126 +591,47 @@ addEventListener('keyup', e => {
 });
 
 /* ===================================================== */
-/* MOUVEMENT                                              */
-/* ===================================================== */
-
-const _fwd   = new THREE.Vector3();
-const _right = new THREE.Vector3();
-
-function updateMovement() {
-    const running = keys.shift && stamina > 0 && keys.z;
-    stamina = running ? Math.max(0,stamina-0.45) : Math.min(100,stamina+0.2);
-    document.getElementById('sp').style.width = stamina+'%';
-
-    _fwd.set(0,0,-1).applyQuaternion(camera.quaternion);
-    _right.set(1,0,0).applyQuaternion(camera.quaternion);
-    _fwd.y=0; _right.y=0;
-    _fwd.normalize(); _right.normalize();
-
-    const accel = running ? 0.055 : 0.028;
-    if (keys.z) velocity.addScaledVector(_fwd,    accel);
-    if (keys.s) velocity.addScaledVector(_fwd,   -accel);
-    if (keys.q) velocity.addScaledVector(_right, -accel);
-    if (keys.d) velocity.addScaledVector(_right,  accel);
-    velocity.multiplyScalar(0.88);
-
-    let nx = camera.position.x + velocity.x;
-    let ny = camera.position.y;
-    let nz = camera.position.z + velocity.z;
-
-    // Gravité avec cap de vitesse de chute
-    jumpVel = Math.max(jumpVel - 0.016, -1.2);
-    ny += jumpVel;
-
-    // Colliders 3D
-    const res = resolveColliders(nx, ny, nz);
-    nx=res.x; ny=res.y; nz=res.z;
-
-    // Sol terrain
-    const groundY = findY(nx, nz) + PLAYER_H;
-
-    if (ny <= groundY) {
-        ny = groundY;
-        if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
-    } else if (res.onTop) {
-        if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
-    } else {
-        grounded = false;
-    }
-
-    camera.position.set(nx, ny, nz);
-    skyMesh.position.copy(camera.position);
-}
-
-/* ===================================================== */
 /* BOUCLE PRINCIPALE                                      */
 /* ===================================================== */
 
-const clock = new THREE.Clock();
-let elapsed = DAY_DURATION * 0.25; // démarre à midi
+let lastTime = performance.now();
 
-updateChunks(0, 0);
-
-function animate() {
+function animate(now) {
     requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05); // cap à 50ms
-    elapsed += dt;
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    const t = now * 0.001;
 
-    // Vent
-    const t = elapsed;
+    if (now - lastChunkTick > 250) {
+        updateChunks();
+        lastChunkTick = now;
+    }
+
     for (const w of windObjects)
-        w.mesh.rotation.z = Math.sin(t*w.speed+w.phase)*w.amp;
+        w.mesh.rotation.z = Math.sin(t * w.speed + w.phase) * w.amp;
 
-    // Lucioles
-    for (const f of fireflyData) {
-        f.mesh.position.y  = f.baseY + Math.sin(t+f.phase)*0.5;
-        f.mesh.position.x += Math.cos(t*0.3+f.phase)*0.008;
+    for (const f of fireflyList) {
+        f.light.position.y = f.baseY + Math.sin(t + f.phase) * 0.6;
+        f.light.position.x = f.baseX + Math.cos(t * 0.25 + f.phase) * 2;
+        f.light.position.z = f.baseZ + Math.sin(t * 0.2  + f.phase) * 2;
+        f.light.intensity  = 0.4 + Math.sin(t * 3 + f.phase) * 0.25;
     }
 
-    // Fade-in chunks
-    for (const [key, fd] of chunkFadeIn) {
-        fd.alpha = Math.min(1, fd.alpha + dt*2.2);
-        fd.group.traverse(obj => {
-            if (!obj.isMesh) return;
-            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-            for (const m of mats) {
-                if (m._baseOpacity !== undefined)
-                    m.opacity = fd.alpha * m._baseOpacity;
-            }
-        });
-        if (fd.alpha >= 1) {
-            // Stabiliser une fois arrivé à 1
-            fd.group.traverse(obj => {
-                if (!obj.isMesh) return;
-                const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-                for (const m of mats) {
-                    if (m._baseOpacity !== undefined) {
-                        m.opacity     = m._baseOpacity;
-                        m.transparent = m._baseOpacity < 1;
-                    }
-                }
-            });
-            chunkFadeIn.delete(key);
-        }
-    }
+    updateScentLines(t);
 
-    updateDayNight(elapsed);
-
-    if (controls.isLocked) updateMovement();
-
-    updateChunks(camera.position.x, camera.position.z);
+    if (controls.isLocked) physicsStep(dt);
 
     renderer.render(scene, camera);
 }
 
-animate();
+animate(performance.now());
 
 /* ===================================================== */
 /* RESIZE                                                 */
 /* ===================================================== */
 
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(innerWidth, innerHeight);
 });
