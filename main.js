@@ -114,13 +114,12 @@ scene.add(moonSprite);
 const STAR_COUNT = 800;
 const starPos = new Float32Array(STAR_COUNT * 3);
 for (let i = 0; i < STAR_COUNT; i++) {
-    // Distribution uniforme sur sphère
     const u = Math.random(), v = Math.random();
     const theta = 2 * Math.PI * u;
     const phi   = Math.acos(2 * v - 1);
     const r     = 1600;
     starPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
-    starPos[i*3+1] = Math.abs(r * Math.cos(phi)) + 50; // hémisphère haute seulement
+    starPos[i*3+1] = Math.abs(r * Math.cos(phi)) + 50;
     starPos[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
 }
 const starGeo = new THREE.BufferGeometry();
@@ -183,7 +182,6 @@ function updateDayNight(elapsed) {
 
     scene.fog.color.lerpColors(new THREE.Color(0x060c18), new THREE.Color(0x9bb4c7), sf);
 
-    // Étoiles visibles la nuit
     starMat.opacity = mf * 0.85;
     stars.position.copy(camera.position);
 
@@ -319,8 +317,8 @@ const globalColliders = [];
 /* ===================================================== */
 
 const CHUNK_SIZE   = 80;
-const CHUNK_SEGS   = 18;  // était 26
-const CHUNK_RADIUS = 2;   // était 3 — 5x5 chunks au lieu de 7x7
+const CHUNK_SEGS   = 18;
+const CHUNK_RADIUS = 2;
 
 const loadedChunks = new Map();
 const chunkFadeIn  = new Map();
@@ -338,12 +336,12 @@ function seededRng(seed) {
 function generateChunk(cx, cz) {
     const key = cx+','+cz;
     if (loadedChunks.has(key)) return;
-    loadedChunks.set(key, null); // réservation immédiate
+    loadedChunks.set(key, null);
     requestAnimationFrame(() => _buildChunk(cx, cz, key));
 }
 
 function _buildChunk(cx, cz, key) {
-    if (!loadedChunks.has(key)) return; // déchargé entre temps
+    if (!loadedChunks.has(key)) return;
 
     const originX = cx * CHUNK_SIZE;
     const originZ = cz * CHUNK_SIZE;
@@ -468,7 +466,7 @@ function _buildChunk(cx, cz, key) {
         fireflyData.push({ mesh:m, baseY:fy, phase:rng()*10 });
     }
 
-    // Fade-in : cloner les matériaux et mettre opacity=0
+    // Fade-in
     group.traverse(obj => {
         if (obj.isMesh) {
             const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -497,7 +495,6 @@ function unloadChunk(cx, cz) {
     scene.remove(data.group);
     data.group.traverse(obj => {
         if (!obj.isMesh) return;
-        // Ne pas disposer les géos/mats partagés
         if (obj.geometry && obj.geometry !== GEO.grass && obj.geometry !== GEO.ff &&
             obj.geometry !== GEO.stem && obj.geometry !== GEO.flower && obj.geometry !== GEO.rock)
             obj.geometry.dispose();
@@ -608,15 +605,24 @@ document.body.addEventListener('click', () => controls.lock());
 
 const velocity = new THREE.Vector3();
 const keys = { z:false, s:false, q:false, d:false, shift:false };
+
+// FIX SAUTS : physique indépendante du framerate
 let jumpVel  = 0;
 let grounded = true;
 let stamina  = 100;
+
+const GRAVITY       = 18.0;  // unités/s²  (remplace 0.016/frame)
+const JUMP_FORCE    =  9.0;  // unités/s   (remplace 0.32/frame)
+const FALL_CAP      = -30.0; // vitesse de chute max unités/s
 
 addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
     if (k in keys) keys[k] = true;
     if (e.shiftKey) keys.shift = true;
-    if (e.code === 'Space' && grounded) { grounded = false; jumpVel = 0.32; }
+    if (e.code === 'Space' && grounded) {
+        grounded = false;
+        jumpVel  = JUMP_FORCE;
+    }
 });
 addEventListener('keyup', e => {
     const k = e.key.toLowerCase();
@@ -631,9 +637,13 @@ addEventListener('keyup', e => {
 const _fwd   = new THREE.Vector3();
 const _right = new THREE.Vector3();
 
-function updateMovement() {
+function updateMovement(dt) {
     const running = keys.shift && stamina > 0 && keys.z;
-    stamina = running ? Math.max(0,stamina-0.45) : Math.min(100,stamina+0.2);
+    const staminaDrain = dt * 22;  // 22 % par seconde en courant
+    const staminaRegen = dt * 10;  // 10 % par seconde au repos
+    stamina = running
+        ? Math.max(0,   stamina - staminaDrain)
+        : Math.min(100, stamina + staminaRegen);
     document.getElementById('sp').style.width = stamina+'%';
 
     _fwd.set(0,0,-1).applyQuaternion(camera.quaternion);
@@ -641,26 +651,27 @@ function updateMovement() {
     _fwd.y=0; _right.y=0;
     _fwd.normalize(); _right.normalize();
 
-    const accel = running ? 0.055 : 0.028;
-    if (keys.z) velocity.addScaledVector(_fwd,    accel);
-    if (keys.s) velocity.addScaledVector(_fwd,   -accel);
-    if (keys.q) velocity.addScaledVector(_right, -accel);
-    if (keys.d) velocity.addScaledVector(_right,  accel);
-    velocity.multiplyScalar(0.88);
+    // Accélération proportionnelle au dt pour framerate-indépendance
+    const speed   = running ? 8.0 : 4.5;  // unités/s
+    const friction = Math.pow(0.12, dt);   // décroissance exponentielle
+
+    if (keys.z) velocity.addScaledVector(_fwd,    speed * dt);
+    if (keys.s) velocity.addScaledVector(_fwd,   -speed * dt);
+    if (keys.q) velocity.addScaledVector(_right, -speed * dt);
+    if (keys.d) velocity.addScaledVector(_right,  speed * dt);
+    velocity.multiplyScalar(friction);
 
     let nx = camera.position.x + velocity.x;
     let ny = camera.position.y;
     let nz = camera.position.z + velocity.z;
 
-    // Gravité avec cap de vitesse de chute
-    jumpVel = Math.max(jumpVel - 0.016, -1.2);
-    ny += jumpVel;
+    // FIX : gravité dt-indépendante
+    jumpVel = Math.max(jumpVel - GRAVITY * dt, FALL_CAP);
+    ny += jumpVel * dt;
 
-    // Colliders 3D
     const res = resolveColliders(nx, ny, nz);
     nx=res.x; ny=res.y; nz=res.z;
 
-    // Sol terrain
     const groundY = findY(nx, nz) + PLAYER_H;
 
     if (ny <= groundY) {
@@ -681,13 +692,22 @@ function updateMovement() {
 /* ===================================================== */
 
 const clock = new THREE.Clock();
-let elapsed = DAY_DURATION * 0.25; // démarre à midi
 
+// FIX CIEL : démarrer à midi = π/2 dans le cycle sinus
+// dayAngle = (elapsed / DAY_DURATION) * 2π = π/2
+// → elapsed = DAY_DURATION / 4
+// MAIS : il faut aussi skiper l'offset de phase pour que sinA=1 au départ
+// Le cycle démarre à angle=0 (aube). Pour démarrer à midi on met elapsed = DAY_DURATION * 0.25
+// Ceci donne dayAngle = π/2, sin(π/2) = 1 → plein soleil. ✓
+let elapsed = DAY_DURATION * 0.25;
+
+// Appel immédiat pour que le ciel soit correct dès le premier frame
+updateDayNight(elapsed);
 updateChunks(0, 0);
 
 function animate() {
     requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05); // cap à 50ms
+    const dt = Math.min(clock.getDelta(), 0.05);
     elapsed += dt;
 
     // Vent
@@ -713,7 +733,6 @@ function animate() {
             }
         });
         if (fd.alpha >= 1) {
-            // Stabiliser une fois arrivé à 1
             fd.group.traverse(obj => {
                 if (!obj.isMesh) return;
                 const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -730,7 +749,7 @@ function animate() {
 
     updateDayNight(elapsed);
 
-    if (controls.isLocked) updateMovement();
+    if (controls.isLocked) updateMovement(dt);
 
     updateChunks(camera.position.x, camera.position.z);
 
