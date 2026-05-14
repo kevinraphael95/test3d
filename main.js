@@ -56,7 +56,7 @@ const skyMat = new THREE.ShaderMaterial({
             vec3 col = h > 0.0
                 ? mix(horizonColor, topColor, pow(h, 0.5))
                 : mix(horizonColor, bottomColor, pow(-h, 0.4));
-            gl_FragColor = vec4(col, 1.0);
+            gl_FragColor = vec4(col * 2.5, 1.0);
         }`,
     side: THREE.BackSide,
     depthWrite: false,
@@ -152,10 +152,10 @@ const ORBIT_R      = 1400;
 
 // Couleurs sky bien saturées pour être visibles avec LinearToneMapping
 const SKY = {
-    day:    { top:new THREE.Color(0x2060c0), hor:new THREE.Color(0x80c8e8), bot:new THREE.Color(0x3d5a2a) },
-    sunset: { top:new THREE.Color(0x1a1a3a), hor:new THREE.Color(0xff5515), bot:new THREE.Color(0x3d2a1a) },
-    night:  { top:new THREE.Color(0x04091f), hor:new THREE.Color(0x0a1228), bot:new THREE.Color(0x060a06) },
-    dawn:   { top:new THREE.Color(0x1a1a3a), hor:new THREE.Color(0xff7030), bot:new THREE.Color(0x201810) },
+    day:    { top: new THREE.Color(0x1a6fd4), hor: new THREE.Color(0x7ec8f0), bot: new THREE.Color(0x3d5a2a) },
+    sunset: { top: new THREE.Color(0x3a1060), hor: new THREE.Color(0xff4400), bot: new THREE.Color(0x4a2010) },
+    night:  { top: new THREE.Color(0x0a1535), hor: new THREE.Color(0x162040), bot: new THREE.Color(0x080f08) },
+    dawn:   { top: new THREE.Color(0x3a1060), hor: new THREE.Color(0xff6620), bot: new THREE.Color(0x201008) },
 };
 
 function setSky(s) {
@@ -209,12 +209,12 @@ function updateDayNight(elapsed) {
     // Phases ciel — plages claires sur toute la journée
     const PI = Math.PI;
     const a  = angle;
-    if      (a < PI*0.12) lerpSky(SKY.dawn, SKY.day,    a/(PI*0.12));
-    else if (a < PI*0.88) setSky(SKY.day);
-    else if (a < PI)      lerpSky(SKY.day,  SKY.sunset,  (a-PI*0.88)/(PI*0.12));
-    else if (a < PI*1.15) lerpSky(SKY.sunset,SKY.night,  (a-PI)/(PI*0.15));
-    else if (a < PI*1.85) setSky(SKY.night);
-    else                  lerpSky(SKY.night,SKY.dawn,    (a-PI*1.85)/(PI*0.15));
+    if      (a < PI*0.20) lerpSky(SKY.dawn,   SKY.day,    a/(PI*0.20));
+    else if (a < PI*0.75) setSky(SKY.day);
+    else if (a < PI*1.10) lerpSky(SKY.day,    SKY.sunset, (a-PI*0.75)/(PI*0.35));
+    else if (a < PI*1.40) lerpSky(SKY.sunset, SKY.night,  (a-PI*1.10)/(PI*0.30));
+    else if (a < PI*1.75) setSky(SKY.night);
+    else                  lerpSky(SKY.night,  SKY.dawn,   (a-PI*1.75)/(PI*0.25));
 }
 
 /* ===================================================== */
