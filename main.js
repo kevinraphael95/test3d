@@ -319,8 +319,8 @@ const globalColliders = [];
 /* ===================================================== */
 
 const CHUNK_SIZE   = 80;
-const CHUNK_SEGS   = 26;
-const CHUNK_RADIUS = 3;
+const CHUNK_SEGS   = 18;  // était 26
+const CHUNK_RADIUS = 2;   // était 3 — 5x5 chunks au lieu de 7x7
 
 const loadedChunks = new Map();
 const chunkFadeIn  = new Map();
@@ -364,7 +364,7 @@ function _buildChunk(cx, cz, key) {
     group.add(terrain);
 
     /* Arbres */
-    const treeCount = 6 + (rng()*9|0);
+    const treeCount = 4 + (rng()*6|0);
     for (let i = 0; i < treeCount; i++) {
         const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
         const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
@@ -681,7 +681,7 @@ function updateMovement() {
 /* ===================================================== */
 
 const clock = new THREE.Clock();
-let elapsed = 0;
+let elapsed = DAY_DURATION * 0.25; // démarre à midi
 
 updateChunks(0, 0);
 
