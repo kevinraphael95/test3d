@@ -173,13 +173,13 @@ function updateDayNight(elapsed) {
     const mf = Math.max(0, -sinA);
 
     sun.intensity       = sf * 2.8;
-    moonLight.intensity = 0.5 + mf * 0.8;
-    hemi.intensity      = 0.35 + sf * 0.65;
+    moonLight.intensity = 1.2 + mf * 1.0;
+    hemi.intensity      = 0.7 + sf * 0.3;
 
     sunSprite.material.opacity  = Math.pow(sf, 0.5);
     moonSprite.material.opacity = Math.pow(mf, 0.5);
 
-    renderer.toneMappingExposure = 0.75 + sf * 0.55;
+    renderer.toneMappingExposure = 1.1 + sf * 0.3;
 
     scene.fog.color.lerpColors(new THREE.Color(0x060c18), new THREE.Color(0x9bb4c7), sf);
 
@@ -299,7 +299,7 @@ function flowerMat(hex) {
 }
 
 const GEO = {
-    grass:  new THREE.CylinderGeometry(0.02,0.06,1.4,3),
+    grass:  new THREE.CylinderGeometry(0.015,0.04,0.5,3),
     ff:     new THREE.SphereGeometry(0.07,4,4),
     stem:   new THREE.CylinderGeometry(0.025,0.035,0.8,5),
     flower: new THREE.SphereGeometry(0.14,6,6),
@@ -440,7 +440,7 @@ function _buildChunk(cx, cz, key) {
     }
 
     /* Herbe instanciée */
-    const grassCount = 80 + (rng()*100|0);
+    const grassCount = 40 + (rng()*50|0);
     const gMesh = new THREE.InstancedMesh(GEO.grass, MAT.grass, grassCount);
     gMesh.frustumCulled = false;
     const dummy = new THREE.Object3D();
@@ -448,7 +448,7 @@ function _buildChunk(cx, cz, key) {
         const wx2 = originX + (rng()-0.5)*CHUNK_SIZE;
         const wz2 = originZ + (rng()-0.5)*CHUNK_SIZE;
         dummy.position.set(wx2, findY(wx2,wz2)+0.7, wz2);
-        dummy.scale.setScalar(0.7+rng()*1.8);
+        dummy.scale.setScalar(0.5+rng()*0.8);
         dummy.rotation.y = rng()*Math.PI;
         dummy.updateMatrix();
         gMesh.setMatrixAt(i, dummy.matrix);
