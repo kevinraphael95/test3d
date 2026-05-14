@@ -31,8 +31,8 @@ camera.position.set(0, 10, 0);
 const skyGeo = new THREE.SphereGeometry(1800, 16, 8);
 skyGeo.scale(-1, 1, 1);
 const skyUniforms = {
-    topColor:     { value: new THREE.Color(0x4a90d9) },
-    horizonColor: { value: new THREE.Color(0xadd8f0) },
+    topColor:     { value: new THREE.Color(0x1a6abf) },
+    horizonColor: { value: new THREE.Color(0x7ec8e8) },
     bottomColor:  { value: new THREE.Color(0x3d5a2a) },
 };
 const skyMat = new THREE.ShaderMaterial({
@@ -193,9 +193,9 @@ scene.add(stars);
 const DAY_DURATION = 1200;
 const ORBIT_R = 1400;
 
-// Couleurs revues : jour très bleu clair, nuit bleu foncé mais pas trop sombre
+// Couleurs nettes : jour bleu clair vif, nuit sombre mais lisible
 const SKY = {
-    day:    { top:new THREE.Color(0x1a6abf), horizon:new THREE.Color(0xadd8f0), bottom:new THREE.Color(0x3d5a2a) },
+    day:    { top:new THREE.Color(0x1a6abf), horizon:new THREE.Color(0x7ec8e8), bottom:new THREE.Color(0x3d5a2a) },
     sunset: { top:new THREE.Color(0x1a1a3a), horizon:new THREE.Color(0xff7030), bottom:new THREE.Color(0x3d2a1a) },
     night:  { top:new THREE.Color(0x05102a), horizon:new THREE.Color(0x0d1a35), bottom:new THREE.Color(0x080f08) },
     dawn:   { top:new THREE.Color(0x1a1a3a), horizon:new THREE.Color(0xff9060), bottom:new THREE.Color(0x2a2218) },
@@ -234,8 +234,7 @@ function updateDayNight(elapsed) {
     const mfSmooth = mf * mf * (3 - 2*mf);
 
     sun.intensity       = sfSmooth * 2.8;
-    // Lumière de nuit plus forte pour rester visible
-    moonLight.intensity = 0.25 + mfSmooth * 0.6;
+    moonLight.intensity = 0.25 + mfSmooth * 0.55;
     hemi.intensity      = 0.35 + sfSmooth * 0.75;
 
     sunSprite.material.opacity  = Math.pow(sf, 0.4);
@@ -243,30 +242,42 @@ function updateDayNight(elapsed) {
     moonSprite.material.opacity = Math.pow(mf, 0.4);
     moonGlow.material.opacity   = Math.pow(mf, 0.6) * 0.7;
 
-    // Exposition plus haute la nuit pour rester lisible
     renderer.toneMappingExposure = 1.0 + sfSmooth * 0.4;
 
     scene.fog.color.lerpColors(new THREE.Color(0x050a18), new THREE.Color(0x9bb4c7), sfSmooth);
     scene.fog.density = 0.003 + (1 - sfSmooth) * 0.002;
 
-    // Étoiles
     const starOpacity = Math.max(0, Math.min(1, (1 - sfSmooth * 1.8)));
     starMat.uniforms.uOpacity.value = starOpacity * 0.95;
     stars.position.copy(camera.position);
 
-    // Phases ciel
+    // Phases ciel — 0=aube, PI/2=midi, PI=coucher, 3PI/2=minuit
+    // a normalisé [0, 2PI]
     const a = ((dayAngle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
-    if      (a < Math.PI/6)            lerpSky(SKY.night,  SKY.dawn,   a/(Math.PI/6));
-    else if (a < Math.PI*5/6) {
-        const t = Math.min((a - Math.PI/6) / (Math.PI*2/3) * 1.5, 1);
-        lerpSky(SKY.dawn, SKY.day, t);
-    }
-    else if (a < Math.PI)              lerpSky(SKY.day,    SKY.sunset, (a-Math.PI*5/6)/(Math.PI/6));
-    else if (a < Math.PI*7/6)          lerpSky(SKY.sunset, SKY.night,  (a-Math.PI)/(Math.PI/6));
-    else {
+    const PI = Math.PI;
+
+    if (a < PI * 0.08) {
+        // aube -> jour (très court, fin de nuit)
+        lerpSky(SKY.dawn, SKY.day, a / (PI * 0.08));
+    } else if (a < PI * 0.92) {
+        // plein jour — pur SKY.day sur toute la plage centrale
+        skyUniforms.topColor.value.copy(SKY.day.top);
+        skyUniforms.horizonColor.value.copy(SKY.day.horizon);
+        skyUniforms.bottomColor.value.copy(SKY.day.bottom);
+    } else if (a < PI) {
+        // coucher
+        lerpSky(SKY.day, SKY.sunset, (a - PI*0.92) / (PI*0.08));
+    } else if (a < PI * 1.12) {
+        // coucher -> nuit
+        lerpSky(SKY.sunset, SKY.night, (a - PI) / (PI*0.12));
+    } else if (a < PI * 1.88) {
+        // pleine nuit
         skyUniforms.topColor.value.copy(SKY.night.top);
         skyUniforms.horizonColor.value.copy(SKY.night.horizon);
         skyUniforms.bottomColor.value.copy(SKY.night.bottom);
+    } else {
+        // aube
+        lerpSky(SKY.night, SKY.dawn, (a - PI*1.88) / (PI*0.12));
     }
 }
 
@@ -442,7 +453,7 @@ function seededRng(seed) {
 /* ===================================================== */
 
 function buildMushroom(wx, wz, gy, rng, group) {
-    const scale  = 0.4 + rng() * 1.2;
+    const scale  = 0.15 + rng() * 0.35;
     const stemH  = 0.5 * scale;
     const capR   = 0.55 * scale;
     const capH   = 0.35 * scale;
@@ -508,42 +519,47 @@ function _buildChunk(cx, cz, key) {
     group.add(terrain);
 
     /* ================================================= */
-    /* ARBRES — taille réaliste (25-45 unités ≈ 25-45 m) */
+    /* ARBRES — taille réaliste, troncs épais, espacés   */
     /* ================================================= */
-    const treeCount = 4 + (rng()*6|0);
+    const treeCount = 7 + (rng()*6|0);
+    const treePosCache = []; // pour éviter les arbres fusionnés
     for (let i = 0; i < treeCount; i++) {
-        const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
-        const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
+        let wx, wz, tries = 0;
+        // Cherche une position assez éloignée des autres arbres
+        do {
+            wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
+            wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
+            tries++;
+        } while (tries < 12 && treePosCache.some(p => {
+            const dx=p[0]-wx, dz=p[1]-wz;
+            return dx*dx+dz*dz < 18*18; // distance min 18 unités
+        }));
+        treePosCache.push([wx, wz]);
         const gy = findY(wx, wz);
 
-        // Hauteur réaliste : 25-45 unités
-        const h      = 28 + rng() * 18;
-        const tr     = 0.8 + rng() * 0.7;
-        // Tronc : occupe les 40% du bas — les feuilles commencent plus haut
-        const trunkRatio = 0.40 + rng() * 0.08;
+        const h      = 28 + rng() * 18;  // 28-46 unités
+        const tr     = 1.4 + rng() * 1.0; // tronc nettement plus épais
+        // Feuilles démarrent à 30% de la hauteur (descendent plus bas qu'avant)
+        const trunkRatio = 0.28 + rng() * 0.08;
         const trunkH = h * trunkRatio;
 
         const tg = new THREE.Group();
 
-        // Tronc plus épais et plus haut
         const trunk = new THREE.Mesh(
-            new THREE.CylinderGeometry(tr * 0.5, tr * 1.2, trunkH + 6, 9),
+            new THREE.CylinderGeometry(tr * 0.6, tr * 1.4, trunkH + 6, 9),
             MAT.trunk
         );
         trunk.position.y = trunkH / 2 - 3;
         trunk.castShadow = true;
         tg.add(trunk);
 
-        // Couches de feuillage — commencent à trunkH (pas plus bas)
-        const layers = 8 + (rng() * 6 | 0);
-        const foliageH = h - trunkH; // hauteur réservée au feuillage
+        const layers = 9 + (rng() * 5 | 0);
+        const foliageH = h - trunkH;
         for (let li = 0; li < layers; li++) {
             const ratio  = li / (layers - 1);
-            // Y commence à trunkH et monte jusqu'au sommet
             const coneY  = trunkH + ratio * foliageH * 0.90;
-            // Rayon décroît du bas vers le haut du feuillage
-            const radius = tr * 9 * (1 - ratio * 0.75) + 2.5;
-            const coneH  = (foliageH / layers) * 2.2;
+            const radius = tr * 8.5 * (1 - ratio * 0.73) + 2.8;
+            const coneH  = (foliageH / layers) * 2.3;
             const cone   = new THREE.Mesh(
                 new THREE.ConeGeometry(radius, coneH, 9),
                 CONE_MATS[(rng() * 3) | 0]
@@ -556,14 +572,12 @@ function _buildChunk(cx, cz, key) {
 
         tg.position.set(wx, gy, wz);
         group.add(tg);
-        localColliders.push({ type:'cylinder', x:wx, y:gy, z:wz, r:tr*1.6, h:trunkH+6 });
+        localColliders.push({ type:'cylinder', x:wx, y:gy, z:wz, r:tr*1.8, h:trunkH+6 });
     }
 
     /* ================================================= */
-    /* ROCHERS — collision box (AABB orientée)            */
-    /* On crée une boîte légèrement oversize autour du    */
-    /* dodecaèdre. Pour les gros, on incline la plateforme*/
-    /* du dessus pour qu'on puisse se poser dessus.       */
+    /* ROCHERS — collision box OBB (rotation Y seule)    */
+    /* Boîte généreuse, dessus plat, on peut monter      */
     /* ================================================= */
     const rockCount = 3 + (rng()*7|0);
     for (let i = 0; i < rockCount; i++) {
@@ -571,40 +585,34 @@ function _buildChunk(cx, cz, key) {
         const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
         const gy = findY(wx, wz);
 
-        // Scale non-uniforme du dodecaèdre
-        const sx = 1.2 + rng() * 2.2;
-        const sy = sx  * (0.6 + rng() * 0.5);  // légèrement aplati
-        const sz = 1.2 + rng() * 2.2;
+        const sx = 1.2 + rng() * 2.4;
+        const sy = sx  * (0.55 + rng() * 0.45);
+        const sz = 1.2 + rng() * 2.4;
         const rotY = rng() * Math.PI * 2;
+        const tiltX = (rng()-0.5)*0.35;
+        const tiltZ = (rng()-0.5)*0.35;
 
         const rock = new THREE.Mesh(GEO.rock, MAT.rock);
         rock.scale.set(sx, sy, sz);
-        rock.rotation.set(rng()*0.4 - 0.2, rotY, rng()*0.4 - 0.2);
-        rock.position.set(wx, gy + sy * 0.45, wz);
+        rock.rotation.set(tiltX, rotY, tiltZ);
+        rock.position.set(wx, gy + sy * 0.48, wz);
         rock.castShadow = rock.receiveShadow = true;
         group.add(rock);
 
-        // Boîte collision : on prend ~110% de la demi-taille visuelle
-        // pour être légèrement genereux (mieux trop que trop petit)
-        const hw = sx * 1.05;  // demi-largeur X
-        const hh = sy * 1.00;  // demi-hauteur Y (centre à gy + sy*0.45)
-        const hd = sz * 1.05;  // demi-profondeur Z
-        const cy = gy + sy * 0.45; // centre Y du rocher
-
-        // Angle d'inclinaison du dessus — suit la légère rotation du rocher
-        // pour donner l'impression d'une plateforme inclinée sur les gros
-        const tiltX = rock.rotation.x; // inclinaison visuelle
-        const tiltZ = rock.rotation.z;
+        // Boîte collision légèrement oversize (dodécaèdre inscrit dans ~90% de la sphère)
+        // On ajoute 15% pour être généreux
+        const hw  = sx * 0.80;  // demi X (dodecaèdre ≈ 0.79 * échelle)
+        const hh  = sy * 0.80;  // demi Y
+        const hd  = sz * 0.80;  // demi Z
+        const cy  = gy + sy * 0.48;
+        const topY = cy + hh;   // dessus plat de la boîte
 
         localColliders.push({
             type: 'box',
             x: wx, y: cy, z: wz,
             hw, hh, hd,
-            rotY,          // rotation Y de la boîte (suit le rocher)
-            tiltX,         // inclinaison du dessus X
-            tiltZ,         // inclinaison du dessus Z
-            topY: cy + hh, // Y du dessus de la boîte (en global)
-            baseY: gy,
+            rotY,
+            topY,
         });
     }
 
@@ -783,41 +791,32 @@ function resolveColliders(nx, ny, nz) {
             }
 
         } else if (c.type === 'box') {
-            // Passer en espace local de la box (rotation Y)
+            // Espace local de la box (rotation Y seulement)
             const { lx, lz } = worldToBoxLocal(nx, nz, c.x, c.z, c.rotY);
 
-            const inX = lx > -(c.hw + PLAYER_R) && lx < (c.hw + PLAYER_R);
-            const inZ = lz > -(c.hd + PLAYER_R) && lz < (c.hd + PLAYER_R);
+            const inX  = lx > -(c.hw + PLAYER_R) && lx < (c.hw + PLAYER_R);
+            const inZ  = lz > -(c.hd + PLAYER_R) && lz < (c.hd + PLAYER_R);
             const pBot = ny - PLAYER_H;
-
-            // Y du dessus du rocher à la position XZ du joueur (tilt)
-            // On calcule un Y de surface incliné selon tiltX/tiltZ
-            const topYAtPlayer = c.topY
-                + Math.tan(c.tiltX) * lz * 0.5
-                + Math.tan(c.tiltZ) * lx * 0.5;
-
-            const inY = ny > c.y - c.hh && pBot < topYAtPlayer + 0.2;
+            const inY  = ny > c.y - c.hh && pBot < c.topY + 0.1;
 
             if (inX && inZ && inY) {
-                // Le joueur peut-il se poser dessus ?
-                if (pBot >= topYAtPlayer - 0.7) {
-                    ny    = topYAtPlayer + PLAYER_H;
+                // Peut-on se poser sur le dessus ?
+                if (pBot >= c.topY - 0.8) {
+                    ny    = c.topY + PLAYER_H;
                     onTop = true;
                 } else {
-                    // Pousser vers l'extérieur de la face la plus proche
-                    const overlapX  = c.hw + PLAYER_R - Math.abs(lx);
-                    const overlapZ  = c.hd + PLAYER_R - Math.abs(lz);
-
-                    // Rotation inverse pour repousser en world space
+                    // Repousser par la face la plus proche (en local)
+                    const overlapX = c.hw + PLAYER_R - Math.abs(lx);
+                    const overlapZ = c.hd + PLAYER_R - Math.abs(lz);
                     const cos = Math.cos(c.rotY), sin = Math.sin(c.rotY);
                     if (overlapX < overlapZ) {
-                        const pushLX = lx > 0 ? overlapX : -overlapX;
-                        nx += pushLX * cos;
-                        nz += pushLX * sin;
+                        const push = lx > 0 ? overlapX : -overlapX;
+                        nx += push * cos;
+                        nz += push * sin;
                     } else {
-                        const pushLZ = lz > 0 ? overlapZ : -overlapZ;
-                        nx += -pushLZ * sin;
-                        nz +=  pushLZ * cos;
+                        const push = lz > 0 ? overlapZ : -overlapZ;
+                        nx += -push * sin;
+                        nz +=  push * cos;
                     }
                 }
             }
@@ -921,9 +920,8 @@ function updateMovement(dt) {
 /* ===================================================== */
 
 const clock = new THREE.Clock();
-// Démarre au matin (environ 8h = ~33% du cycle, angle ≈ PI*0.33)
-// sin(angle) > 0 = jour — on vise environ PI/4 pour un beau matin
-let elapsed = DAY_DURATION * (0.12);
+// Démarre à midi pile : angle = PI/2, sin=1, soleil au zénith, ciel bleu pur
+let elapsed = DAY_DURATION * 0.25;
 
 updateChunks(0, 0);
 
