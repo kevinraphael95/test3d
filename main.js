@@ -1,60 +1,15 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+import { mergeGeometries } from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
 
 /* ===================================================== */
-/* PERLIN NOISE 2D                                        */
+/* HEIGHTMAP — formule directe, zéro raycast             */
 /* ===================================================== */
 
-const _perm = new Uint8Array(512);
-{
-    const b = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) b[i] = i;
-    for (let i = 255; i > 0; i--) {
-        const j = Math.random() * (i + 1) | 0;
-        [b[i], b[j]] = [b[j], b[i]];
-    }
-    for (let i = 0; i < 512; i++) _perm[i] = b[i & 255];
-}
-
-function _fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
-function _lerp(a, b, t) { return a + (b - a) * t; }
-function _grad2(h, x, y) {
-    switch (h & 3) {
-        case 0: return  x + y;
-        case 1: return -x + y;
-        case 2: return  x - y;
-        default: return -x - y;
-    }
-}
-function perlin(x, y) {
-    const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
-    const xf = x - Math.floor(x),   yf = y - Math.floor(y);
-    const u = _fade(xf), v = _fade(yf);
-    const aa = _perm[_perm[xi]     + yi],   ab = _perm[_perm[xi]     + yi + 1];
-    const ba = _perm[_perm[xi + 1] + yi],   bb = _perm[_perm[xi + 1] + yi + 1];
-    return _lerp(
-        _lerp(_grad2(aa, xf,     yf    ), _grad2(ba, xf - 1, yf    ), u),
-        _lerp(_grad2(ab, xf,     yf - 1), _grad2(bb, xf - 1, yf - 1), u),
-        v
-    );
-}
-function fbm(x, y) {
-    let v = 0, amp = 1, freq = 1, max = 0;
-    for (let i = 0; i < 6; i++) {
-        v   += perlin(x * freq, y * freq) * amp;
-        max += amp;
-        amp  *= 0.5;
-        freq *= 2.0;
-    }
-    return v / max;
-}
-
-// Hauteur en world-space — seule source de vérité
-function getHeight(wx, wz) {
-    const s = 0.003;
-    return fbm(wx * s, wz * s) * 40
-         + Math.sin(wx * 0.015) * 5
-         + Math.cos(wz * 0.012) * 4;
+function findY(x, z) {
+    return Math.sin(x * 0.025) * 8
+         + Math.cos(z * 0.020) * 6
+         + Math.sin((x + z) * 0.01) * 12;
 }
 
 /* ===================================================== */
@@ -62,47 +17,48 @@ function getHeight(wx, wz) {
 /* ===================================================== */
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x9bb4c7, 0.0025);
-scene.background = new THREE.Color(0x87a7c4);
+scene.fog = new THREE.FogExp2(0xc8d8e8, 0.003);
 
 /* ===================================================== */
-/* SKYBOX SHADER                                          */
+/* SKYBOX shader Skyrim                                   */
 /* ===================================================== */
 
 const SUN_DIR = new THREE.Vector3(0.45, 0.35, -0.82).normalize();
+
 scene.add(new THREE.Mesh(
-    new THREE.SphereGeometry(4000, 32, 16),
+    new THREE.SphereGeometry(2400, 20, 12),
     new THREE.ShaderMaterial({
-        side: THREE.BackSide, depthWrite: false,
+        side: THREE.BackSide,
+        depthWrite: false,
         uniforms: {
-            topColor:   { value: new THREE.Color(0x1a3d6e) },
-            midColor:   { value: new THREE.Color(0x6aaed6) },
-            horizColor: { value: new THREE.Color(0xd4eaf8) },
-            sunDir:     { value: SUN_DIR.clone() },
-            sunColor:   { value: new THREE.Color(0xfffbe0) },
-            sunSize:    { value: 0.9990 },
-            glowSize:   { value: 0.9940 },
+            sunDir:    { value: SUN_DIR },
+            sunColor:  { value: new THREE.Color(0xfffbe0) },
         },
         vertexShader: `
             varying vec3 vDir;
             void main(){
                 vDir = normalize((modelMatrix * vec4(position,1.0)).xyz);
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-            }`,
+            }
+        `,
         fragmentShader: `
-            uniform vec3 topColor, midColor, horizColor, sunDir, sunColor;
-            uniform float sunSize, glowSize;
+            uniform vec3 sunDir, sunColor;
             varying vec3 vDir;
             void main(){
                 float h = vDir.y;
-                vec3 sky = mix(horizColor, midColor,  smoothstep(0.0, 0.25, h));
-                sky       = mix(sky,        topColor,  smoothstep(0.2, 0.80, h));
-                sky       = mix(vec3(0.08,0.06,0.04), sky, smoothstep(-0.04, 0.01, h));
+                vec3 top  = vec3(0.10,0.24,0.44);
+                vec3 mid  = vec3(0.42,0.68,0.84);
+                vec3 horiz= vec3(0.83,0.91,0.96);
+                vec3 sky  = mix(horiz, mid,  smoothstep(0.0,0.22,h));
+                sky       = mix(sky,   top,  smoothstep(0.18,0.75,h));
+                sky       = mix(vec3(0.07,0.05,0.03), sky, smoothstep(-0.04,0.01,h));
                 float d   = dot(normalize(vDir), normalize(sunDir));
-                sky += sunColor * smoothstep(sunSize,  1.000, d);
-                sky += sunColor * smoothstep(glowSize, sunSize, d) * 0.5;
-                gl_FragColor = vec4(sky, 1.0);
-            }`
+                sky += sunColor * smoothstep(0.9992,1.00,d);
+                sky += sunColor * smoothstep(0.994,0.999,d)*0.45;
+                sky += sunColor * smoothstep(0.97,0.994,d)*0.08;
+                gl_FragColor = vec4(sky,1.0);
+            }
+        `
     })
 ));
 
@@ -110,528 +66,388 @@ scene.add(new THREE.Mesh(
 /* CAMERA                                                 */
 /* ===================================================== */
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 4000);
-camera.position.set(0, getHeight(0, 0) + 1.8, 0);
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1400);
+camera.position.set(0, findY(0,0)+1.8, 0);
 
 /* ===================================================== */
 /* RENDERER                                               */
 /* ===================================================== */
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(1);
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 1.1;
 document.body.appendChild(renderer.domElement);
 
 /* ===================================================== */
 /* LUMIERES                                               */
 /* ===================================================== */
 
-scene.add(new THREE.HemisphereLight(0xc8ddf5, 0x2a3d1a, 0.85));
-const sun = new THREE.DirectionalLight(0xfff5d0, 2.6);
-sun.position.copy(SUN_DIR).multiplyScalar(800);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = sun.shadow.camera.bottom = -400;
-sun.shadow.camera.right = sun.shadow.camera.top   =  400;
-sun.shadow.bias = -0.0003;
+scene.add(new THREE.HemisphereLight(0xc8ddf5, 0x2a3d1a, 1.3));
+const sun = new THREE.DirectionalLight(0xfff5d0, 2.0);
+sun.position.copy(SUN_DIR).multiplyScalar(300);
 scene.add(sun);
 
 /* ===================================================== */
-/* MATERIAUX PARTAGES                                     */
+/* TERRAIN                                                */
 /* ===================================================== */
 
-const matGround = new THREE.MeshStandardMaterial({ color: 0x243b1d, roughness: 1 });
-const matTrunk  = new THREE.MeshStandardMaterial({ color: 0x1a0f0a });
-const matRoot   = new THREE.MeshStandardMaterial({ color: 0x22150f });
-const matLeafs  = [
-    new THREE.MeshStandardMaterial({ color: 0x0f240f }),
-    new THREE.MeshStandardMaterial({ color: 0x163016 }),
-    new THREE.MeshStandardMaterial({ color: 0x1c3d1c }),
-];
-const matStem   = new THREE.MeshStandardMaterial({ color: 0x2d4c1e });
-const matRock   = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 1 });
-const matGrass  = new THREE.MeshStandardMaterial({ color: 0x3f6b2d });
-const SHARED_MATS = new Set([matGround, matTrunk, matRoot, matStem, matRock, matGrass, ...matLeafs]);
-
-const FLOWER_COLORS = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
-
-/* ===================================================== */
-/* CHUNK SYSTEM                                           */
-/* ===================================================== */
-
-const CHUNK_SIZE    = 120;   // taille en unités world
-const CHUNK_SEGS    = 48;    // subdivisions (pairs pour éviter artefacts)
-const LOAD_RADIUS   = 3;
-const UNLOAD_RADIUS = 5;
-
-const loadedChunks   = new Map(); // key → { group, cx, cz }
-const chunkColliders = new Map(); // key → [{cx,cy,cz,r}]
-
-function chunkKey(cx, cz) { return `${cx},${cz}`; }
-
-/* ===================================================== */
-/* SYSTEMES GLOBAUX                                       */
-/* ===================================================== */
-
-const windObjects = [];
-const scentLines  = [];
-const fireflyList = [];
-const WIND_DIR    = new THREE.Vector2(1.0, 0.3).normalize().multiplyScalar(1.4);
-
-function spawnScentLines(group, x, y, z, color) {
-    const n = 2 + (Math.random() * 2 | 0);
-    for (let t = 0; t < n; t++) {
-        const SEG = 8;
-        const pts = [];
-        for (let i = 0; i <= SEG; i++) pts.push(new THREE.Vector3());
-        const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = new THREE.LineBasicMaterial({
-            color, transparent: true,
-            opacity: 0.15 + Math.random() * 0.12,
-            depthWrite: false, blending: THREE.AdditiveBlending
-        });
-        const line = new THREE.Line(geo, mat);
-        group.add(line);
-        scentLines.push({
-            line, geo,
-            baseX: x, baseY: y + 0.85, baseZ: z,
-            phase: Math.random() * Math.PI * 2,
-            speed: 0.4 + Math.random() * 0.6,
-            driftX: (Math.random() - 0.5) * 1.2,
-            driftZ: (Math.random() - 0.5) * 0.4,
-            offset: Math.random() * 3, SEG
-        });
-    }
+const groundGeo = new THREE.PlaneGeometry(1200, 1200, 80, 80);
+const gpos = groundGeo.attributes.position.array;
+for (let i = 0; i < gpos.length; i += 3) {
+    gpos[i+2] = findY(gpos[i], gpos[i+1]);
 }
-
-function updateScentLines(t) {
-    for (const s of scentLines) {
-        const pts = s.geo.attributes.position;
-        const age = t * s.speed + s.offset;
-        for (let i = 0; i <= s.SEG; i++) {
-            const r = i / s.SEG;
-            pts.setXYZ(i,
-                s.baseX + WIND_DIR.x * r * 2.5 + s.driftX * r + Math.sin(age + r * 3) * 0.3,
-                s.baseY + r * 2.2 + Math.sin(age * 1.3 + r * 2) * 0.18,
-                s.baseZ + WIND_DIR.y * r * 2.5 + s.driftZ * r + Math.cos(age * 0.9 + r * 2.5) * 0.22
-            );
-        }
-        pts.needsUpdate = true;
-        const cycle = ((t * s.speed + s.offset) % (Math.PI * 2)) / (Math.PI * 2);
-        s.line.material.opacity = (0.10 + Math.sin(t * 0.8 + s.phase) * 0.05) * Math.sin(cycle * Math.PI);
-        if (cycle < s.speed * 0.016) {
-            s.driftX = (Math.random() - 0.5) * 1.2;
-            s.driftZ = (Math.random() - 0.5) * 0.4;
-        }
-    }
-}
+groundGeo.computeVertexNormals();
+const ground = new THREE.Mesh(
+    groundGeo,
+    new THREE.MeshLambertMaterial({ color: 0x243b1d })
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
 
 /* ===================================================== */
-/* SEEDED RNG déterministe par chunk                      */
+/* PHYSIQUE 3D — capsule + sphères statiques + grid       */
 /* ===================================================== */
 
-function seededRng(cx, cz) {
-    let s = ((cx * 73856093) ^ (cz * 19349663)) >>> 0;
-    if (s === 0) s = 1;
-    return () => {
-        s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
-        s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
-        s = (s ^ (s >>> 16)) >>> 0;
-        return s / 0x100000000;
-    };
-}
-
-/* ===================================================== */
-/* BUILD CHUNK TERRAIN                                    */
-/* ===================================================== */
-/*
- * PlaneGeometry(W, H, segX, segZ) non-rotatée :
- *   - vertices en espace LOCAL : X ∈ [-W/2, W/2], Y ∈ [-H/2, H/2], Z = 0
- *   - après rotation.x = -PI/2 : local X → world X, local Y → world Z, local Z → world Y
- *
- * Pour un chunk centré en (cx*CHUNK_SIZE, 0, cz*CHUNK_SIZE) :
- *   world_X = ox + local_X
- *   world_Z = oz + local_Y   ← local Y devient world Z après la rotation
- *
- * On fixe donc pos[i+2] = getHeight(ox + pos[i], oz + pos[i+1])
- * AVANT d'appliquer la rotation.
- */
-
-function buildChunkTerrain(cx, cz) {
-    const ox = cx * CHUNK_SIZE;  // centre world X du chunk
-    const oz = cz * CHUNK_SIZE;  // centre world Z du chunk
-
-    const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGS, CHUNK_SEGS);
-    const pos = geo.attributes.position.array;
-
-    for (let i = 0; i < pos.length; i += 3) {
-        // pos[i]   = local X  → world X = ox + local X
-        // pos[i+1] = local Y  → world Z = oz + local Y  (après rotation)
-        // pos[i+2] = local Z  → world Y = hauteur
-        const wx = ox + pos[i];
-        const wz = oz + pos[i + 1];
-        pos[i + 2] = getHeight(wx, wz);
-    }
-
-    geo.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geo, matGround);
-    mesh.rotation.x = -Math.PI / 2;          // après: localX→worldX, localY→worldZ, localZ→worldY
-    mesh.position.set(ox, 0, oz);             // centre du chunk
-    mesh.receiveShadow = true;
-    return mesh;
-}
-
-/* ===================================================== */
-/* BUILD CHUNK OBJETS                                     */
-/* ===================================================== */
-
-function buildChunkObjects(cx, cz, group) {
-    const rng = seededRng(cx, cz);
-    const ox = cx * CHUNK_SIZE;
-    const oz = cz * CHUNK_SIZE;
-    const half = CHUNK_SIZE / 2;
-    const cols = [];
-
-    // Helper : position aléatoire dans le chunk en world-space
-    const rpos = () => ({
-        x: ox + (rng() - 0.5) * CHUNK_SIZE,
-        z: oz + (rng() - 0.5) * CHUNK_SIZE
-    });
-
-    /* ---- ARBRES ---- */
-    const treeCount = 4 + (rng() * 6 | 0);
-    for (let i = 0; i < treeCount; i++) {
-        const { x, z } = rpos();
-        const y      = getHeight(x, z);
-        const height = 18 + rng() * 18;
-        const tr     = 1  + rng() * 0.6;
-        const tree   = new THREE.Group();
-
-        // Tronc (prolongé sous terre pour masquer les gaps)
-        const trunk = new THREE.Mesh(
-            new THREE.CylinderGeometry(tr * 0.55, tr * 1.1, height + 10, 8),
-            matTrunk
-        );
-        trunk.position.y = height / 2 - 5;
-        trunk.castShadow = true;
-        tree.add(trunk);
-
-        // Racines
-        for (let r = 0; r < 5; r++) {
-            const angle  = (Math.PI * 2 / 5) * r;
-            const rLen   = 2.5 + rng() * 1.5;
-            const rThick = 0.12 + rng() * 0.08;
-            const pivot  = new THREE.Group();
-            pivot.position.set(Math.cos(angle) * tr * 0.85, 0.1, Math.sin(angle) * tr * 0.85);
-            pivot.rotation.y = angle;
-            pivot.rotation.z = Math.PI / 2 + 0.75 + rng() * 0.35;
-            const rootMesh = new THREE.Mesh(
-                new THREE.CylinderGeometry(rThick * 0.35, rThick, rLen, 5),
-                matRoot
-            );
-            rootMesh.position.y = -rLen / 2;
-            pivot.add(rootMesh);
-            tree.add(pivot);
-        }
-
-        // Feuillage
-        const layers = 7 + (rng() * 4 | 0);
-        for (let l = 0; l < layers; l++) {
-            const ratio = l / layers;
-            const size  = (1 - ratio) * (tr * 7) + 2;
-            const cone  = new THREE.Mesh(
-                new THREE.ConeGeometry(size, 7, 8),
-                matLeafs[rng() * 3 | 0]
-            );
-            cone.position.y = height * 0.28 + ratio * height * 0.75;
-            cone.castShadow = true;
-            tree.add(cone);
-            windObjects.push({ mesh: cone, phase: rng() * 10, speed: 0.5, amp: 0.015 });
-        }
-
-        tree.position.set(x, y, z);
-        group.add(tree);
-        cols.push({ cx: x, cy: y + 4,  cz: z, r: tr + 1.0 });
-        cols.push({ cx: x, cy: y + 12, cz: z, r: tr + 0.8 });
-    }
-
-    /* ---- ROCHERS ---- */
-    const rockCount = 2 + (rng() * 5 | 0);
-    for (let i = 0; i < rockCount; i++) {
-        const { x, z } = rpos();
-        const y    = getHeight(x, z);
-        const size = 1 + rng() * 2;
-        const rock = new THREE.Mesh(
-            new THREE.DodecahedronGeometry(size, 0),
-            matRock
-        );
-        rock.position.set(x, y + size * 0.3, z);
-        rock.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-        rock.scale.y = 0.6;
-        rock.castShadow = rock.receiveShadow = true;
-        group.add(rock);
-        cols.push({ cx: x, cy: y + size * 0.3, cz: z, r: size * 0.9 });
-    }
-
-    /* ---- FLEURS ---- */
-    const flowerCount = 10 + (rng() * 25 | 0);
-    for (let i = 0; i < flowerCount; i++) {
-        const { x, z } = rpos();
-        const y     = getHeight(x, z);
-        const color = FLOWER_COLORS[rng() * FLOWER_COLORS.length | 0];
-        const g     = new THREE.Group();
-        const stem  = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.7, 5), matStem);
-        stem.position.y = 0.35;
-        const head = new THREE.Mesh(
-            new THREE.SphereGeometry(0.12, 6, 6),
-            new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.1 })
-        );
-        head.position.y = 0.8;
-        g.add(stem, head);
-        g.position.set(x, y, z);
-        group.add(g);
-        windObjects.push({ mesh: g, phase: rng() * 5, speed: 2, amp: 0.04 });
-        spawnScentLines(group, x, y, z, color);
-    }
-
-    /* ---- HERBE instanciée ---- */
-    const grassCount = 80 + (rng() * 120 | 0);
-    const grassMesh  = new THREE.InstancedMesh(
-        new THREE.CylinderGeometry(0.02, 0.05, 1.2, 3),
-        matGrass, grassCount
-    );
-    const d = new THREE.Object3D();
-    for (let i = 0; i < grassCount; i++) {
-        const { x, z } = rpos();
-        const y = getHeight(x, z);
-        d.position.set(x, y + 0.5, z);
-        d.scale.setScalar(0.7 + rng() * 1.8);
-        d.rotation.y = rng() * Math.PI;
-        d.updateMatrix();
-        grassMesh.setMatrixAt(i, d.matrix);
-    }
-    group.add(grassMesh);
-
-    /* ---- LUCIOLES ---- */
-    const ffCount = 1 + (rng() * 3 | 0);
-    for (let i = 0; i < ffCount; i++) {
-        const { x, z } = rpos();
-        const y     = getHeight(x, z) + 2 + rng() * 4;
-        const light = new THREE.PointLight(0xffffaa, 0.65, 9);
-        light.position.set(x, y, z);
-        group.add(light);
-        fireflyList.push({ light, baseY: y, baseX: x, baseZ: z, phase: rng() * 10 });
-    }
-
-    return cols;
-}
-
-/* ===================================================== */
-/* LOAD / UNLOAD                                          */
-/* ===================================================== */
-
-function loadChunk(cx, cz) {
-    const key = chunkKey(cx, cz);
-    if (loadedChunks.has(key)) return;
-
-    const group = new THREE.Group();
-    group.add(buildChunkTerrain(cx, cz));
-    const cols = buildChunkObjects(cx, cz, group);
-
-    scene.add(group);
-    loadedChunks.set(key, { group, cx, cz });
-    chunkColliders.set(key, cols);
-}
-
-function unloadChunk(key) {
-    const chunk = loadedChunks.get(key);
-    if (!chunk) return;
-
-    const members = new Set();
-    chunk.group.traverse(o => members.add(o));
-
-    for (let i = windObjects.length - 1; i >= 0; i--)
-        if (members.has(windObjects[i].mesh)) windObjects.splice(i, 1);
-    for (let i = fireflyList.length - 1; i >= 0; i--)
-        if (members.has(fireflyList[i].light)) fireflyList.splice(i, 1);
-    for (let i = scentLines.length - 1; i >= 0; i--)
-        if (members.has(scentLines[i].line)) scentLines.splice(i, 1);
-
-    scene.remove(chunk.group);
-    chunk.group.traverse(o => {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material && !SHARED_MATS.has(o.material)) {
-            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
-            else o.material.dispose();
-        }
-    });
-
-    loadedChunks.delete(key);
-    chunkColliders.delete(key);
-}
-
-let lastChunkTick = 0;
-
-function updateChunks() {
-    const pcx = Math.round(camera.position.x / CHUNK_SIZE);
-    const pcz = Math.round(camera.position.z / CHUNK_SIZE);
-
-    for (let dz = -LOAD_RADIUS; dz <= LOAD_RADIUS; dz++)
-    for (let dx = -LOAD_RADIUS; dx <= LOAD_RADIUS; dx++)
-        if (Math.hypot(dx, dz) <= LOAD_RADIUS)
-            loadChunk(pcx + dx, pcz + dz);
-
-    for (const [key, chunk] of loadedChunks)
-        if (Math.hypot(chunk.cx - pcx, chunk.cz - pcz) > UNLOAD_RADIUS)
-            unloadChunk(key);
-}
-
-/* ===================================================== */
-/* PHYSIQUE CAPSULE                                       */
-/* ===================================================== */
-
-const PLAYER_RADIUS = 0.5;
-const PLAYER_HEIGHT = 1.8;
-const GRAVITY       = -18;
-const JUMP_VEL      = 7;
-const MOVE_ACCEL    = 28;
-const MOVE_DRAG     = 8;
-
+const PLAYER_R = 0.5, PLAYER_H = 1.8;
+const GRAVITY = -18, JUMP_VEL = 7;
 const playerVel = new THREE.Vector3();
-let   grounded  = false;
-let   stamina   = 100;
+let grounded = false;
 
-const _fwd  = new THREE.Vector3();
-const _right = new THREE.Vector3();
-const _up    = new THREE.Vector3(0, 1, 0);
+const staticSpheres = [];
+const CELL = 20;
+const grid = new Map();
 
-function resolveSphere(s) {
-    const cy_lo = camera.position.y - PLAYER_HEIGHT + PLAYER_RADIUS;
-    const cy_hi = camera.position.y - PLAYER_RADIUS;
-    const ccy   = Math.max(cy_lo, Math.min(cy_hi, s.cy));
-    const dx = camera.position.x - s.cx;
-    const dy = camera.position.y - ccy;
-    const dz = camera.position.z - s.cz;
-    const d2 = dx*dx + dy*dy + dz*dz;
-    const minD = s.r + PLAYER_RADIUS;
-    if (d2 >= minD * minD) return;
-    const d = Math.sqrt(d2) || 0.001;
-    const pen = minD - d;
-    camera.position.x += (dx / d) * pen;
-    camera.position.z += (dz / d) * pen;
-    const vd = playerVel.x * (dx/d) + playerVel.z * (dz/d);
-    if (vd < 0) { playerVel.x -= vd * (dx/d); playerVel.z -= vd * (dz/d); }
+function gkey(x, z) { return `${Math.floor(x/CELL)},${Math.floor(z/CELL)}`; }
+
+function addSphere(cx, cy, cz, r) {
+    const idx = staticSpheres.length;
+    staticSpheres.push({cx,cy,cz,r});
+    const cells = new Set();
+    for(let a=-1;a<=1;a++) for(let b=-1;b<=1;b++) cells.add(gkey(cx+a*r,cz+b*r));
+    for(const k of cells){ if(!grid.has(k)) grid.set(k,[]); grid.get(k).push(idx); }
 }
 
-function physicsStep(dt) {
-    const running = keys.shift && stamina > 0 && keys.z;
-    stamina = running ? Math.max(0, stamina - 45*dt) : Math.min(100, stamina + 20*dt);
-    document.getElementById('sp').style.width = stamina + '%';
+function resolveVsSphere(s) {
+    const cy_lo = camera.position.y - PLAYER_H + PLAYER_R;
+    const cy_hi = camera.position.y - PLAYER_R;
+    const ccy   = Math.max(cy_lo, Math.min(cy_hi, s.cy));
+    const dx=camera.position.x-s.cx, dy=camera.position.y-ccy, dz=camera.position.z-s.cz;
+    const d2=dx*dx+dy*dy+dz*dz, mn=s.r+PLAYER_R;
+    if(d2>=mn*mn) return;
+    const d=Math.sqrt(d2)||0.001, pen=mn-d;
+    camera.position.x+=dx/d*pen; camera.position.z+=dz/d*pen;
+    const vd=playerVel.x*(dx/d)+playerVel.z*(dz/d);
+    if(vd<0){ playerVel.x-=vd*(dx/d); playerVel.z-=vd*(dz/d); }
+}
 
-    camera.getWorldDirection(_fwd); _fwd.y = 0; _fwd.normalize();
-    _right.crossVectors(_fwd, _up).negate().normalize();
+/* ===================================================== */
+/* GRASS — instanced                                      */
+/* ===================================================== */
 
-    const spd = MOVE_ACCEL * (running ? 1.8 : 1);
-    if (keys.z) { playerVel.x += _fwd.x  * spd*dt; playerVel.z += _fwd.z  * spd*dt; }
-    if (keys.s) { playerVel.x -= _fwd.x  * spd*dt; playerVel.z -= _fwd.z  * spd*dt; }
-    if (keys.q) { playerVel.x -= _right.x * spd*dt; playerVel.z -= _right.z * spd*dt; }
-    if (keys.d) { playerVel.x += _right.x * spd*dt; playerVel.z += _right.z * spd*dt; }
+const GRASS_N = 1500;
+const gMesh = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.02,0.05,1.0,3,1),
+    new THREE.MeshLambertMaterial({color:0x3f6b2d}),
+    GRASS_N
+);
+scene.add(gMesh);
+{
+    const d=new THREE.Object3D();
+    for(let i=0;i<GRASS_N;i++){
+        const gx=(Math.random()-.5)*800, gz=(Math.random()-.5)*800;
+        d.position.set(gx, findY(gx,gz)+0.4, gz);
+        d.scale.setScalar(0.5+Math.random()*1.4);
+        d.rotation.y=Math.random()*Math.PI;
+        d.updateMatrix();
+        gMesh.setMatrixAt(i,d.matrix);
+    }
+    gMesh.instanceMatrix.needsUpdate=true;
+}
 
-    const drag = Math.exp(-MOVE_DRAG * dt);
-    playerVel.x *= drag; playerVel.z *= drag;
-    if (!grounded) playerVel.y += GRAVITY * dt;
+/* ===================================================== */
+/* FLEURS — instanced heads + merged stems + scent lines  */
+/* ===================================================== */
 
-    camera.position.x += playerVel.x * dt;
-    camera.position.y += playerVel.y * dt;
-    camera.position.z += playerVel.z * dt;
+const FCOLS = [0xff4444,0x4466ff,0xffff55,0xdddddd,0xff66cc];
+const FLOWER_N = 350;
+const SEG = 6;
+const WIND = new THREE.Vector2(1.0,0.3).normalize().multiplyScalar(1.2);
 
-    // Collisions sphères proches
-    const pcx = Math.round(camera.position.x / CHUNK_SIZE);
-    const pcz = Math.round(camera.position.z / CHUNK_SIZE);
-    for (let dz = -1; dz <= 1; dz++)
-    for (let dx = -1; dx <= 1; dx++) {
-        const cols = chunkColliders.get(chunkKey(pcx+dx, pcz+dz));
-        if (cols) for (const s of cols) resolveSphere(s);
+// Instanced mesh par couleur
+const fMeshes = FCOLS.map(c => {
+    const m = new THREE.InstancedMesh(
+        new THREE.SphereGeometry(0.12,5,4),
+        new THREE.MeshLambertMaterial({color:c,emissive:c,emissiveIntensity:0.15}),
+        Math.ceil(FLOWER_N/FCOLS.length)+2
+    );
+    m.frustumCulled=true;
+    scene.add(m);
+    return m;
+});
+
+const scentLines = [];
+const stemGeos   = [];
+const stemMat    = new THREE.MeshLambertMaterial({color:0x2d4c1e});
+const fcounters  = new Array(FCOLS.length).fill(0);
+const fDummy     = new THREE.Object3D();
+
+for(let i=0;i<FLOWER_N;i++){
+    const fx=(Math.random()-.5)*700, fz=(Math.random()-.5)*700;
+    const fy=findY(fx,fz);
+    const ci=Math.random()*FCOLS.length|0;
+
+    // Tête
+    fDummy.position.set(fx, fy+0.8, fz); fDummy.updateMatrix();
+    fMeshes[ci].setMatrixAt(fcounters[ci]++, fDummy.matrix);
+
+    // Tige (merge plus tard)
+    const sg=new THREE.CylinderGeometry(0.02,0.03,0.7,4,1);
+    sg.translate(fx,fy+0.35,fz);
+    stemGeos.push(sg);
+
+    // 1 ligne d'odeur par fleur
+    const pts=[]; for(let s=0;s<=SEG;s++) pts.push(new THREE.Vector3());
+    const geo=new THREE.BufferGeometry().setFromPoints(pts);
+    const line=new THREE.Line(geo, new THREE.LineBasicMaterial({
+        color:FCOLS[ci], transparent:true, opacity:0.0,
+        depthWrite:false, blending:THREE.AdditiveBlending
+    }));
+    scene.add(line);
+    scentLines.push({
+        line, geo,
+        bx:fx, by:fy+0.85, bz:fz,
+        phase:Math.random()*Math.PI*2,
+        speed:0.3+Math.random()*0.5,
+        dx:(Math.random()-.5)*0.9,
+        dz:(Math.random()-.5)*0.3,
+        off:Math.random()*3
+    });
+}
+
+fMeshes.forEach((m,i)=>{ m.count=fcounters[i]; m.instanceMatrix.needsUpdate=true; });
+
+// Merge tiges
+const mergedStems = mergeGeometries(stemGeos, false);
+if(mergedStems) scene.add(new THREE.Mesh(mergedStems, stemMat));
+stemGeos.forEach(g=>g.dispose());
+
+/* ===================================================== */
+/* ROCHERS — instanced                                    */
+/* ===================================================== */
+
+const ROCK_N = 80;
+const rMesh = new THREE.InstancedMesh(
+    new THREE.DodecahedronGeometry(1,0),
+    new THREE.MeshLambertMaterial({color:0x666666}),
+    ROCK_N
+);
+rMesh.frustumCulled=true;
+scene.add(rMesh);
+{
+    const d=new THREE.Object3D();
+    for(let i=0;i<ROCK_N;i++){
+        const rx=(Math.random()-.5)*800, rz=(Math.random()-.5)*800;
+        const ry=findY(rx,rz);
+        const s=0.8+Math.random()*1.8;
+        d.position.set(rx,ry+s*0.3,rz);
+        d.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+        d.scale.set(s,s*0.6,s);
+        d.updateMatrix();
+        rMesh.setMatrixAt(i,d.matrix);
+        addSphere(rx,ry+s*0.3,rz,s*0.9);
+    }
+    rMesh.instanceMatrix.needsUpdate=true;
+}
+
+/* ===================================================== */
+/* ARBRES — tout merged (1 draw call par matière)         */
+/* ===================================================== */
+
+const TREE_N   = 100;
+const trunkGs  = [], rootGs = [], leafGs = [[],[],[]];
+
+for(let i=0;i<TREE_N;i++){
+    const tx=(Math.random()-.5)*900, tz=(Math.random()-.5)*900;
+    const ty=findY(tx,tz);
+    const h=18+Math.random()*18, tr=1+Math.random()*0.6;
+
+    // Tronc prolongé -10 sous le sol
+    const tg=new THREE.CylinderGeometry(tr*0.55,tr*1.1,h+10,6,1);
+    tg.translate(tx, ty+h/2-5, tz);
+    trunkGs.push(tg);
+
+    // Racines — pivotent de la base vers le bas
+    for(let r=0;r<5;r++){
+        const ang=(Math.PI*2/5)*r;
+        const rLen=2.0+Math.random()*1.2, rT=0.10+Math.random()*0.07;
+        const rg=new THREE.CylinderGeometry(rT*0.3,rT,rLen,4,1);
+        // Incline vers le bas (>PI/2 = sous horizontal)
+        rg.rotateX(0);
+        rg.rotateZ(Math.PI/2 + 0.85 + Math.random()*0.3);
+        rg.rotateY(ang);
+        // Translation au pied du tronc + décalage vers bas
+        rg.translate(
+            tx + Math.cos(ang)*tr*0.8,
+            ty - rLen*0.5 + 0.2,
+            tz + Math.sin(ang)*tr*0.8
+        );
+        rootGs.push(rg);
     }
 
-    // Sol
-    const gy = getHeight(camera.position.x, camera.position.z) + PLAYER_HEIGHT;
-    if (camera.position.y <= gy) {
-        camera.position.y = gy;
-        if (playerVel.y < 0) playerVel.y = 0;
-        grounded = true;
-    } else {
-        grounded = false;
+    // Feuillage
+    const layers=5+(Math.random()*3|0);
+    for(let l=0;l<layers;l++){
+        const ratio=l/layers;
+        const size=(1-ratio)*(tr*6)+1.5;
+        const ci=Math.random()*3|0;
+        const cg=new THREE.ConeGeometry(size,6,7,1);
+        cg.translate(tx, ty+h*0.28+ratio*h*0.75, tz);
+        leafGs[ci].push(cg);
     }
+
+    addSphere(tx,ty+5, tz,tr+1.0);
+    addSphere(tx,ty+13,tz,tr+0.7);
+}
+
+const tMat  = new THREE.MeshLambertMaterial({color:0x1a0f0a});
+const rMat  = new THREE.MeshLambertMaterial({color:0x22150f});
+const lMats = [0x0f240f,0x163016,0x1c3d1c].map(c=>new THREE.MeshLambertMaterial({color:c}));
+
+function mergeAdd(geos,mat){
+    if(!geos.length) return;
+    const m=mergeGeometries(geos,false);
+    if(m) scene.add(new THREE.Mesh(m,mat));
+    geos.forEach(g=>g.dispose());
+}
+mergeAdd(trunkGs, tMat);
+mergeAdd(rootGs,  rMat);
+for(let i=0;i<3;i++) mergeAdd(leafGs[i], lMats[i]);
+
+/* ===================================================== */
+/* LUCIOLES — 20 max                                     */
+/* ===================================================== */
+
+const fireflies=[];
+for(let i=0;i<20;i++){
+    const light=new THREE.PointLight(0xffffaa,0.5,10);
+    const fx=(Math.random()-.5)*600, fz=(Math.random()-.5)*600;
+    const fy=findY(fx,fz)+2+Math.random()*4;
+    light.position.set(fx,fy,fz);
+    scene.add(light);
+    fireflies.push({light,bx:fx,bz:fz,by:fy,phase:Math.random()*10});
 }
 
 /* ===================================================== */
 /* CONTROLS                                               */
 /* ===================================================== */
 
-const controls = new PointerLockControls(camera, document.body);
-document.body.addEventListener('click', () => controls.lock());
+const controls=new PointerLockControls(camera,document.body);
+document.body.addEventListener('click',()=>controls.lock());
 
-const keys = { z: false, s: false, q: false, d: false, shift: false };
-addEventListener('keydown', e => {
-    const k = e.key.toLowerCase();
-    if (k in keys) keys[k] = true;
-    if (e.shiftKey) keys.shift = true;
-    if (e.code === 'Space' && grounded) { playerVel.y = JUMP_VEL; grounded = false; }
+const keys={z:false,s:false,q:false,d:false,shift:false};
+let stamina=100;
+
+addEventListener('keydown',e=>{
+    const k=e.key.toLowerCase();
+    if(k in keys) keys[k]=true;
+    if(e.shiftKey) keys.shift=true;
+    if(e.code==='Space'&&grounded){ playerVel.y=JUMP_VEL; grounded=false; }
 });
-addEventListener('keyup', e => {
-    const k = e.key.toLowerCase();
-    if (k in keys) keys[k] = false;
-    if (!e.shiftKey) keys.shift = false;
+addEventListener('keyup',e=>{
+    const k=e.key.toLowerCase();
+    if(k in keys) keys[k]=false;
+    if(!e.shiftKey) keys.shift=false;
 });
 
 /* ===================================================== */
-/* BOUCLE PRINCIPALE                                      */
+/* PHYSIQUE                                               */
 /* ===================================================== */
 
-let lastTime = performance.now();
+const _fwd=new THREE.Vector3(), _right=new THREE.Vector3();
+const ACCEL=28, DRAG=8;
+let lastTime=performance.now();
 
-function animate(now) {
+function physicsStep(dt){
+    const run=keys.shift&&stamina>0&&keys.z;
+    stamina=run?Math.max(0,stamina-45*dt):Math.min(100,stamina+20*dt);
+    document.getElementById('sp').style.width=stamina+'%';
+
+    _fwd.set(0,0,-1).applyQuaternion(camera.quaternion); _fwd.y=0; _fwd.normalize();
+    _right.set(1,0,0).applyQuaternion(camera.quaternion); _right.y=0; _right.normalize();
+
+    const spd=ACCEL*(run?1.8:1);
+    if(keys.z){playerVel.x+=_fwd.x*spd*dt; playerVel.z+=_fwd.z*spd*dt;}
+    if(keys.s){playerVel.x-=_fwd.x*spd*dt; playerVel.z-=_fwd.z*spd*dt;}
+    if(keys.q){playerVel.x-=_right.x*spd*dt; playerVel.z-=_right.z*spd*dt;}
+    if(keys.d){playerVel.x+=_right.x*spd*dt; playerVel.z+=_right.z*spd*dt;}
+
+    playerVel.x*=Math.exp(-DRAG*dt);
+    playerVel.z*=Math.exp(-DRAG*dt);
+    if(!grounded) playerVel.y+=GRAVITY*dt;
+
+    camera.position.addScaledVector(playerVel,dt);
+
+    const near=grid.get(gkey(camera.position.x,camera.position.z))||[];
+    for(const idx of near) resolveVsSphere(staticSpheres[idx]);
+
+    const gy=findY(camera.position.x,camera.position.z)+PLAYER_H;
+    if(camera.position.y<=gy){
+        camera.position.y=gy;
+        if(playerVel.y<0) playerVel.y=0;
+        grounded=true;
+    } else { grounded=false; }
+}
+
+/* ===================================================== */
+/* SCENT LINES                                            */
+/* ===================================================== */
+
+function updateScent(t){
+    for(const s of scentLines){
+        const pts=s.geo.attributes.position;
+        const age=t*s.speed+s.off;
+        for(let i=0;i<=SEG;i++){
+            const r=i/SEG;
+            pts.setXYZ(i,
+                s.bx + WIND.x*r*2.0 + s.dx*r + Math.sin(age+r*2.8)*0.22,
+                s.by + r*1.8        + Math.sin(age*1.1+r*1.6)*0.13,
+                s.bz + WIND.y*r*2.0 + s.dz*r + Math.cos(age*0.85+r*2.2)*0.18
+            );
+        }
+        pts.needsUpdate=true;
+        const cycle=((age)%(Math.PI*2))/(Math.PI*2);
+        s.line.material.opacity=(0.08+Math.sin(t*0.6+s.phase)*0.04)*Math.max(0,Math.sin(cycle*Math.PI));
+    }
+}
+
+/* ===================================================== */
+/* BOUCLE                                                 */
+/* ===================================================== */
+
+function animate(now){
     requestAnimationFrame(animate);
-    const dt = Math.min((now - lastTime) / 1000, 0.05);
-    lastTime = now;
-    const t = now * 0.001;
+    const dt=Math.min((now-lastTime)/1000,0.05);
+    lastTime=now;
+    const t=now*0.001;
 
-    if (now - lastChunkTick > 250) {
-        updateChunks();
-        lastChunkTick = now;
+    for(const f of fireflies){
+        f.light.position.y=f.by+Math.sin(t+f.phase)*0.6;
+        f.light.position.x=f.bx+Math.cos(t*0.2+f.phase)*1.5;
+        f.light.position.z=f.bz+Math.sin(t*0.18+f.phase)*1.5;
     }
 
-    for (const w of windObjects)
-        w.mesh.rotation.z = Math.sin(t * w.speed + w.phase) * w.amp;
-
-    for (const f of fireflyList) {
-        f.light.position.y = f.baseY + Math.sin(t + f.phase) * 0.6;
-        f.light.position.x = f.baseX + Math.cos(t * 0.25 + f.phase) * 2;
-        f.light.position.z = f.baseZ + Math.sin(t * 0.2  + f.phase) * 2;
-        f.light.intensity  = 0.4 + Math.sin(t * 3 + f.phase) * 0.25;
-    }
-
-    updateScentLines(t);
-
-    if (controls.isLocked) physicsStep(dt);
-
-    renderer.render(scene, camera);
+    updateScent(t);
+    if(controls.isLocked) physicsStep(dt);
+    renderer.render(scene,camera);
 }
 
 animate(performance.now());
 
-/* ===================================================== */
-/* RESIZE                                                 */
-/* ===================================================== */
-
-addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight;
+addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+    renderer.setSize(innerWidth,innerHeight);
 });
