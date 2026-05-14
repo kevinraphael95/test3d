@@ -43,13 +43,22 @@ sun.shadow.camera.bottom = -300;
 scene.add(sun);
 
 /* ===================================================== */
-/* HEIGHTMAP — source unique de vérité                   */
+/* HEIGHTMAP                                             */
+/*                                                       */
+/* PlaneGeometry avant rotation.x = -PI/2 :             */
+/*   pos[i]   = x_local  →  x_monde  (inchangé)         */
+/*   pos[i+1] = y_local  →  z_monde  = -y_local          */
+/*   pos[i+2] = z_local  →  y_monde  (la hauteur)        */
+/*                                                       */
+/* Donc : z_monde = -y_local = -pos[i+1]                 */
+/* La formule du terrain doit être heightFormula(x, -y)  */
+/* findY(x_monde, z_monde) = heightFormula(x_monde, z_monde) */
 /* ===================================================== */
 
 const WORLD   = 1200;
 const HM_SIZE = 512;
 
-// Formule de hauteur — identique terrain + findY
+// Source unique de vérité — args en coordonnées MONDE (x, z)
 function heightFormula(x, z) {
     return (
         Math.sin(x * 0.025) * 8 +
@@ -58,7 +67,7 @@ function heightFormula(x, z) {
     );
 }
 
-// Grille précalculée
+// Grille précalculée en coordonnées monde
 const heightmap = new Float32Array(HM_SIZE * HM_SIZE);
 for (let row = 0; row < HM_SIZE; row++) {
     for (let col = 0; col < HM_SIZE; col++) {
@@ -68,10 +77,10 @@ for (let row = 0; row < HM_SIZE; row++) {
     }
 }
 
-// Interpolation bilinéaire — précis même sur terrain ondulé
-function findY(x, z) {
-    const u  = (x / WORLD + 0.5) * (HM_SIZE - 1);
-    const v  = (z / WORLD + 0.5) * (HM_SIZE - 1);
+// Interpolation bilinéaire — coordonnées monde
+function findY(wx, wz) {
+    const u  = (wx / WORLD + 0.5) * (HM_SIZE - 1);
+    const v  = (wz / WORLD + 0.5) * (HM_SIZE - 1);
     const c0 = Math.max(0, Math.min(HM_SIZE - 2, Math.floor(u)));
     const r0 = Math.max(0, Math.min(HM_SIZE - 2, Math.floor(v)));
     const fu = u - c0;
@@ -85,15 +94,18 @@ function findY(x, z) {
 
 /* ===================================================== */
 /* TERRAIN                                               */
-/* PlaneGeometry non-rotaté : pos[i]=X, pos[i+1]=Z(!)  */
-/* pos[i+2] = hauteur (axe Y local, devient Y en monde) */
+/* pos[i]   = x_local = x_monde                         */
+/* pos[i+1] = y_local = -z_monde  →  on passe -pos[i+1] */
+/* pos[i+2] = hauteur (axe local Z, devient Y monde)    */
 /* ===================================================== */
 
 const groundGeo = new THREE.PlaneGeometry(WORLD, WORLD, 140, 140);
-const pos = groundGeo.attributes.position.array;
+const vpos = groundGeo.attributes.position.array;
 
-for (let i = 0; i < pos.length; i += 3) {
-    pos[i + 2] = heightFormula(pos[i], pos[i + 1]);
+for (let i = 0; i < vpos.length; i += 3) {
+    const wx =  vpos[i];      // x monde
+    const wz = -vpos[i + 1]; // z monde = -y_local
+    vpos[i + 2] = heightFormula(wx, wz);
 }
 
 groundGeo.computeVertexNormals();
@@ -165,7 +177,6 @@ const FLOWER_BUCKETS = FLOWER_COLORS_HEX.map(hex =>
 FLOWER_BUCKETS.forEach(m => { m.frustumCulled = false; scene.add(m); });
 const bucketCounts = new Int32Array(NC);
 
-// Positions réelles stockées pour les scent particles
 const flowerPos = new Float32Array(FLOWER_COUNT * 3);
 
 for (let i = 0; i < FLOWER_COUNT; i++) {
@@ -255,7 +266,7 @@ for (let i = 0; i < ROCK_COUNT; i++) {
     const s  = 0.7 + Math.random() * 1.5;
     const sy = s * 0.6;
 
-    dummy.position.set(x, y + sy * 0.5, z);  // ancré au sol
+    dummy.position.set(x, y + sy * 0.5, z);
     dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
     dummy.scale.set(s, sy, s);
     dummy.updateMatrix();
