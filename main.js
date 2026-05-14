@@ -31,8 +31,8 @@ camera.position.set(0, 10, 0);
 const skyGeo = new THREE.SphereGeometry(1800, 16, 8);
 skyGeo.scale(-1, 1, 1);
 const skyUniforms = {
-    topColor:     { value: new THREE.Color(0x1a3a6e) },
-    horizonColor: { value: new THREE.Color(0x87bcd4) },
+    topColor:     { value: new THREE.Color(0x4a90d9) },
+    horizonColor: { value: new THREE.Color(0xadd8f0) },
     bottomColor:  { value: new THREE.Color(0x3d5a2a) },
 };
 const skyMat = new THREE.ShaderMaterial({
@@ -76,11 +76,11 @@ sun.shadow.camera.right = sun.shadow.camera.top  =  200;
 sun.shadow.camera.far = 1500;
 scene.add(sun);
 
-const moonLight = new THREE.DirectionalLight(0x3355aa, 0.0);
+const moonLight = new THREE.DirectionalLight(0x4466bb, 0.0);
 scene.add(moonLight);
 
 /* ===================================================== */
-/* SPRITES SOLEIL & LUNE — plus grands et plus visibles  */
+/* SPRITES SOLEIL & LUNE                                  */
 /* ===================================================== */
 
 function makeCircleSprite(inner, outer, size) {
@@ -103,7 +103,6 @@ function makeCircleSprite(inner, outer, size) {
     return sp;
 }
 
-// Halo supplémentaire autour du soleil
 function makeGlowSprite(color, size) {
     const c = document.createElement('canvas');
     c.width = c.height = 256;
@@ -133,7 +132,7 @@ scene.add(moonSprite);
 scene.add(moonGlow);
 
 /* ===================================================== */
-/* ÉTOILES — Plus grandes et plus brillantes             */
+/* ÉTOILES                                                */
 /* ===================================================== */
 
 const STAR_COUNT = 1200;
@@ -147,13 +146,12 @@ for (let i = 0; i < STAR_COUNT; i++) {
     starPositions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
     starPositions[i*3+1] = Math.abs(r * Math.cos(phi)) + 80;
     starPositions[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
-    starSizes[i] = 1.5 + Math.random() * 3.5; // tailles variées
+    starSizes[i] = 1.5 + Math.random() * 3.5;
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
 starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
 
-// Shader custom pour étoiles scintillantes avec taille variable
 const starMat = new THREE.ShaderMaterial({
     uniforms: {
         uOpacity: { value: 0.0 },
@@ -188,16 +186,18 @@ const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
 
 /* ===================================================== */
-/* CYCLE JOUR / NUIT — 20 min = 1200 s                   */
+/* CYCLE JOUR / NUIT — démarre au matin (t=0.18)          */
+/* DAY_DURATION = 1200s = 20 min                          */
 /* ===================================================== */
 
 const DAY_DURATION = 1200;
 const ORBIT_R = 1400;
 
+// Couleurs revues : jour très bleu clair, nuit bleu foncé mais pas trop sombre
 const SKY = {
-    day:    { top:new THREE.Color(0x1a3a6e), horizon:new THREE.Color(0x87bcd4), bottom:new THREE.Color(0x3d5a2a) },
+    day:    { top:new THREE.Color(0x1a6abf), horizon:new THREE.Color(0xadd8f0), bottom:new THREE.Color(0x3d5a2a) },
     sunset: { top:new THREE.Color(0x1a1a3a), horizon:new THREE.Color(0xff7030), bottom:new THREE.Color(0x3d2a1a) },
-    night:  { top:new THREE.Color(0x050812), horizon:new THREE.Color(0x0d1a2e), bottom:new THREE.Color(0x0a0f08) },
+    night:  { top:new THREE.Color(0x05102a), horizon:new THREE.Color(0x0d1a35), bottom:new THREE.Color(0x080f08) },
     dawn:   { top:new THREE.Color(0x1a1a3a), horizon:new THREE.Color(0xff9060), bottom:new THREE.Color(0x2a2218) },
 };
 
@@ -230,25 +230,26 @@ function updateDayNight(elapsed) {
     const sf = Math.max(0, sinA);
     const mf = Math.max(0, -sinA);
 
-    // Lever/coucher progressif avec smoothstep
     const sfSmooth = sf * sf * (3 - 2*sf);
     const mfSmooth = mf * mf * (3 - 2*mf);
 
     sun.intensity       = sfSmooth * 2.8;
-    moonLight.intensity = 0.08 + mfSmooth * 0.5;
-    hemi.intensity      = 0.15 + sfSmooth * 0.85;
+    // Lumière de nuit plus forte pour rester visible
+    moonLight.intensity = 0.25 + mfSmooth * 0.6;
+    hemi.intensity      = 0.35 + sfSmooth * 0.75;
 
     sunSprite.material.opacity  = Math.pow(sf, 0.4);
     sunGlow.material.opacity    = Math.pow(sf, 0.6) * 0.8;
     moonSprite.material.opacity = Math.pow(mf, 0.4);
     moonGlow.material.opacity   = Math.pow(mf, 0.6) * 0.7;
 
-    renderer.toneMappingExposure = 0.8 + sfSmooth * 0.6;
+    // Exposition plus haute la nuit pour rester lisible
+    renderer.toneMappingExposure = 1.0 + sfSmooth * 0.4;
 
-    scene.fog.color.lerpColors(new THREE.Color(0x030609), new THREE.Color(0x9bb4c7), sfSmooth);
+    scene.fog.color.lerpColors(new THREE.Color(0x050a18), new THREE.Color(0x9bb4c7), sfSmooth);
     scene.fog.density = 0.003 + (1 - sfSmooth) * 0.002;
 
-    // Étoiles — visibles dès que le soleil descend
+    // Étoiles
     const starOpacity = Math.max(0, Math.min(1, (1 - sfSmooth * 1.8)));
     starMat.uniforms.uOpacity.value = starOpacity * 0.95;
     stars.position.copy(camera.position);
@@ -270,25 +271,16 @@ function updateDayNight(elapsed) {
 }
 
 /* ===================================================== */
-/* MUSIQUE — boucle avec 2 min de silence                */
+/* MUSIQUE                                                */
 /* ===================================================== */
 
-const SILENCE_BETWEEN = 120; // secondes
+const SILENCE_BETWEEN = 120;
 
 function initMusic() {
     const audio = new Audio('background_sound.mp3');
     audio.volume = 0.45;
-
-    function playWithDelay() {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-    }
-
-    audio.addEventListener('ended', () => {
-        setTimeout(playWithDelay, SILENCE_BETWEEN * 1000);
-    });
-
-    // Démarrage au premier clic (autoplay policy)
+    function playWithDelay() { audio.currentTime = 0; audio.play().catch(() => {}); }
+    audio.addEventListener('ended', () => { setTimeout(playWithDelay, SILENCE_BETWEEN * 1000); });
     let started = false;
     const startAudio = () => {
         if (started) return;
@@ -298,7 +290,6 @@ function initMusic() {
     };
     document.addEventListener('click', startAudio);
 }
-
 initMusic();
 
 /* ===================================================== */
@@ -371,7 +362,6 @@ function findY(wx, wz) {
          + heightAt(x0+HSTEP,z0+HSTEP)*fu*fv;
 }
 
-/* Normale du terrain — pour smooth sur pentes */
 function terrainNormal(wx, wz) {
     const d = HSTEP;
     const hL = findY(wx-d, wz);
@@ -386,15 +376,19 @@ function terrainNormal(wx, wz) {
 /* ===================================================== */
 
 const MAT = {
-    trunk:  new THREE.MeshStandardMaterial({ color:0x2a1a0e }),
-    cone0:  new THREE.MeshStandardMaterial({ color:0x0f240f }),
-    cone1:  new THREE.MeshStandardMaterial({ color:0x163016 }),
-    cone2:  new THREE.MeshStandardMaterial({ color:0x1c3d1c }),
-    rock:   new THREE.MeshStandardMaterial({ color:0x666666, roughness:1 }),
-    ground: new THREE.MeshStandardMaterial({ color:0x243b1d, roughness:1 }),
-    stem:   new THREE.MeshStandardMaterial({ color:0x2d4c1e }),
-    grass:  new THREE.MeshStandardMaterial({ color:0x3f6b2d }),
-    ff:     new THREE.MeshBasicMaterial({ color:0xffffaa }),
+    trunk:     new THREE.MeshStandardMaterial({ color:0x2a1a0e }),
+    cone0:     new THREE.MeshStandardMaterial({ color:0x0f240f }),
+    cone1:     new THREE.MeshStandardMaterial({ color:0x163016 }),
+    cone2:     new THREE.MeshStandardMaterial({ color:0x1c3d1c }),
+    rock:      new THREE.MeshStandardMaterial({ color:0x777777, roughness:1 }),
+    ground:    new THREE.MeshStandardMaterial({ color:0x243b1d, roughness:1 }),
+    stem:      new THREE.MeshStandardMaterial({ color:0x2d4c1e }),
+    grass:     new THREE.MeshStandardMaterial({ color:0x3f6b2d }),
+    ff:        new THREE.MeshBasicMaterial({ color:0xffffaa }),
+    mushCap:   new THREE.MeshStandardMaterial({ color:0xcc3300 }),
+    mushCap2:  new THREE.MeshStandardMaterial({ color:0xaa2200 }),
+    mushSpot:  new THREE.MeshStandardMaterial({ color:0xffffff }),
+    mushStem:  new THREE.MeshStandardMaterial({ color:0xe8dcc8 }),
 };
 const CONE_MATS       = [MAT.cone0, MAT.cone1, MAT.cone2];
 const FLOWER_COLORS   = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
@@ -443,6 +437,48 @@ function seededRng(seed) {
     };
 }
 
+/* ===================================================== */
+/* CHAMPIGNONS                                            */
+/* ===================================================== */
+
+function buildMushroom(wx, wz, gy, rng, group) {
+    const scale  = 0.4 + rng() * 1.2;
+    const stemH  = 0.5 * scale;
+    const capR   = 0.55 * scale;
+    const capH   = 0.35 * scale;
+
+    const stemGeo = new THREE.CylinderGeometry(capR*0.28, capR*0.35, stemH, 7);
+    const stemMesh = new THREE.Mesh(stemGeo, MAT.mushStem);
+    stemMesh.position.set(wx, gy + stemH*0.5, wz);
+    stemMesh.castShadow = true;
+    group.add(stemMesh);
+
+    // Chapeau (demi-sphère aplatie)
+    const capGeo = new THREE.SphereGeometry(capR, 10, 6, 0, Math.PI*2, 0, Math.PI*0.55);
+    const capMesh = new THREE.Mesh(capGeo, rng() > 0.3 ? MAT.mushCap : MAT.mushCap2);
+    capMesh.position.set(wx, gy + stemH + capR*0.05, wz);
+    capMesh.castShadow = true;
+    group.add(capMesh);
+
+    // Quelques spots blancs sur le chapeau
+    const spotCount = 3 + (rng()*4|0);
+    const spotGeo = new THREE.SphereGeometry(capR*0.09, 5, 5);
+    for (let s = 0; s < spotCount; s++) {
+        const ang = rng() * Math.PI * 2;
+        const rad = capR * (0.2 + rng() * 0.55);
+        const sx  = wx + Math.cos(ang) * rad;
+        const sz  = wz + Math.sin(ang) * rad;
+        const sy  = gy + stemH + Math.sqrt(Math.max(0, capR*capR - rad*rad)) * 0.92;
+        const spot = new THREE.Mesh(spotGeo, MAT.mushSpot);
+        spot.position.set(sx, sy, sz);
+        group.add(spot);
+    }
+}
+
+/* ===================================================== */
+/* CHUNK BUILD                                            */
+/* ===================================================== */
+
 function generateChunk(cx, cz) {
     const key = cx+','+cz;
     if (loadedChunks.has(key)) return;
@@ -471,67 +507,105 @@ function _buildChunk(cx, cz, key) {
     terrain.receiveShadow = true;
     group.add(terrain);
 
-    /* Arbres */
+    /* ================================================= */
+    /* ARBRES — taille réaliste (25-45 unités ≈ 25-45 m) */
+    /* ================================================= */
     const treeCount = 4 + (rng()*6|0);
     for (let i = 0; i < treeCount; i++) {
         const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
         const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
         const gy = findY(wx, wz);
 
-        const h  = 16 + rng()*18;
-        const tr = 0.6 + rng()*0.6;
-        const trunkH = h * 0.55;
+        // Hauteur réaliste : 25-45 unités
+        const h      = 28 + rng() * 18;
+        const tr     = 0.8 + rng() * 0.7;
+        // Tronc : occupe les 40% du bas — les feuilles commencent plus haut
+        const trunkRatio = 0.40 + rng() * 0.08;
+        const trunkH = h * trunkRatio;
 
         const tg = new THREE.Group();
 
+        // Tronc plus épais et plus haut
         const trunk = new THREE.Mesh(
-            new THREE.CylinderGeometry(tr*0.55, tr*1.1, trunkH+5, 8),
+            new THREE.CylinderGeometry(tr * 0.5, tr * 1.2, trunkH + 6, 9),
             MAT.trunk
         );
-        trunk.position.y = trunkH/2 - 2.5;
+        trunk.position.y = trunkH / 2 - 3;
         trunk.castShadow = true;
         tg.add(trunk);
 
-        const layers = 7 + (rng()*5|0);
+        // Couches de feuillage — commencent à trunkH (pas plus bas)
+        const layers = 8 + (rng() * 6 | 0);
+        const foliageH = h - trunkH; // hauteur réservée au feuillage
         for (let li = 0; li < layers; li++) {
-            const ratio  = li / (layers-1);
-            const coneY  = ratio * h * 0.92;
-            const radius = tr*10*(1-ratio*0.72) + 2.2;
-            const coneH  = (h/layers) * 2.0;
+            const ratio  = li / (layers - 1);
+            // Y commence à trunkH et monte jusqu'au sommet
+            const coneY  = trunkH + ratio * foliageH * 0.90;
+            // Rayon décroît du bas vers le haut du feuillage
+            const radius = tr * 9 * (1 - ratio * 0.75) + 2.5;
+            const coneH  = (foliageH / layers) * 2.2;
             const cone   = new THREE.Mesh(
-                new THREE.ConeGeometry(radius, coneH, 8),
-                CONE_MATS[(rng()*3)|0]
+                new THREE.ConeGeometry(radius, coneH, 9),
+                CONE_MATS[(rng() * 3) | 0]
             );
             cone.position.y = coneY;
             cone.castShadow = true;
             tg.add(cone);
-            windObjects.push({ mesh:cone, phase:rng()*10, speed:0.5, amp:0.013 });
+            windObjects.push({ mesh:cone, phase:rng()*10, speed:0.5, amp:0.012 });
         }
 
         tg.position.set(wx, gy, wz);
         group.add(tg);
-        localColliders.push({ type:'cylinder', x:wx, y:gy, z:wz, r:tr*1.5, h:trunkH+5 });
+        localColliders.push({ type:'cylinder', x:wx, y:gy, z:wz, r:tr*1.6, h:trunkH+6 });
     }
 
-    /* Rochers — collision sphérique (plus précise) */
+    /* ================================================= */
+    /* ROCHERS — collision box (AABB orientée)            */
+    /* On crée une boîte légèrement oversize autour du    */
+    /* dodecaèdre. Pour les gros, on incline la plateforme*/
+    /* du dessus pour qu'on puisse se poser dessus.       */
+    /* ================================================= */
     const rockCount = 3 + (rng()*7|0);
     for (let i = 0; i < rockCount; i++) {
         const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
         const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
         const gy = findY(wx, wz);
-        const sx = 0.9+rng()*1.8, sy = sx*0.65, sz = 0.9+rng()*1.8;
+
+        // Scale non-uniforme du dodecaèdre
+        const sx = 1.2 + rng() * 2.2;
+        const sy = sx  * (0.6 + rng() * 0.5);  // légèrement aplati
+        const sz = 1.2 + rng() * 2.2;
+        const rotY = rng() * Math.PI * 2;
 
         const rock = new THREE.Mesh(GEO.rock, MAT.rock);
         rock.scale.set(sx, sy, sz);
-        rock.rotation.set(rng()*Math.PI, rng()*Math.PI, rng()*Math.PI);
-        rock.position.set(wx, gy+sy*0.5, wz);
+        rock.rotation.set(rng()*0.4 - 0.2, rotY, rng()*0.4 - 0.2);
+        rock.position.set(wx, gy + sy * 0.45, wz);
         rock.castShadow = rock.receiveShadow = true;
         group.add(rock);
 
-        // Rayon sphérique moyen du rocher pour collision plus fidèle
-        const avgR = (sx + sy + sz) / 3 * 0.85;
-        const centerY = gy + sy * 0.5;
-        localColliders.push({ type:'sphere', x:wx, y:centerY, z:wz, r:avgR, baseY:gy, topH:sy });
+        // Boîte collision : on prend ~110% de la demi-taille visuelle
+        // pour être légèrement genereux (mieux trop que trop petit)
+        const hw = sx * 1.05;  // demi-largeur X
+        const hh = sy * 1.00;  // demi-hauteur Y (centre à gy + sy*0.45)
+        const hd = sz * 1.05;  // demi-profondeur Z
+        const cy = gy + sy * 0.45; // centre Y du rocher
+
+        // Angle d'inclinaison du dessus — suit la légère rotation du rocher
+        // pour donner l'impression d'une plateforme inclinée sur les gros
+        const tiltX = rock.rotation.x; // inclinaison visuelle
+        const tiltZ = rock.rotation.z;
+
+        localColliders.push({
+            type: 'box',
+            x: wx, y: cy, z: wz,
+            hw, hh, hd,
+            rotY,          // rotation Y de la boîte (suit le rocher)
+            tiltX,         // inclinaison du dessus X
+            tiltZ,         // inclinaison du dessus Z
+            topY: cy + hh, // Y du dessus de la boîte (en global)
+            baseY: gy,
+        });
     }
 
     /* Fleurs */
@@ -540,15 +614,32 @@ function _buildChunk(cx, cz, key) {
         const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.9;
         const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.9;
         const gy = findY(wx, wz);
-
         const stem = new THREE.Mesh(GEO.stem, MAT.stem);
         stem.position.set(wx, gy+0.4, wz);
         group.add(stem);
-
         const fc   = FLOWER_COLORS[(rng()*FLOWER_COLORS.length)|0];
         const head = new THREE.Mesh(GEO.flower, flowerMat(fc));
         head.position.set(wx, gy+0.9, wz);
         group.add(head);
+    }
+
+    /* Champignons */
+    const mushCount = 1 + (rng() * 5 | 0);
+    for (let i = 0; i < mushCount; i++) {
+        const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
+        const wz = originZ + (rng()-0.5)*CHUNK_SIZE*0.88;
+        const gy = findY(wx, wz);
+        buildMushroom(wx, wz, gy, rng, group);
+
+        // Petits groupes de champignons
+        if (rng() > 0.5) {
+            const clusterCount = 2 + (rng() * 4 | 0);
+            for (let c = 0; c < clusterCount; c++) {
+                const offX = wx + (rng()-0.5)*2.5;
+                const offZ = wz + (rng()-0.5)*2.5;
+                buildMushroom(offX, offZ, findY(offX, offZ), rng, group);
+            }
+        }
     }
 
     /* Herbe instanciée */
@@ -653,11 +744,21 @@ function updateChunks(px, pz) {
 }
 
 /* ===================================================== */
-/* PHYSIQUE 3D — collisions améliorées                   */
+/* PHYSIQUE 3D — collisions                              */
 /* ===================================================== */
 
 const PLAYER_R = 0.4;
 const PLAYER_H = 1.8;
+
+// Transforme un point world en espace local de la box (rotation Y seulement)
+function worldToBoxLocal(px, pz, cx, cz, rotY) {
+    const dx = px - cx, dz = pz - cz;
+    const cos = Math.cos(-rotY), sin = Math.sin(-rotY);
+    return {
+        lx: dx * cos - dz * sin,
+        lz: dx * sin + dz * cos,
+    };
+}
 
 function resolveColliders(nx, ny, nz) {
     let onTop = false;
@@ -681,56 +782,43 @@ function resolveColliders(nx, ny, nz) {
                 }
             }
 
-        } else if (c.type === 'sphere') {
-            // Collision sphère vs capsule joueur (simplifié en point central)
-            const dx  = nx - c.x;
-            const dz  = nz - c.z;
-            // Y du point le plus proche de la sphère sur la capsule verticale du joueur
-            const playerMidY = ny - PLAYER_H * 0.5;
-            const dy  = playerMidY - c.y;
-            const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            const minDist = c.r + PLAYER_R * 1.4;
-
-            if (dist < minDist && dist > 0.001) {
-                // Peut-on monter dessus ?
-                const topY = c.y + c.r;
-                const pBot = ny - PLAYER_H;
-                if (pBot >= topY - 0.5 && dy > 0) {
-                    ny    = topY + PLAYER_H;
-                    onTop = true;
-                } else {
-                    // Repousser horizontalement principalement
-                    const pen = minDist - dist;
-                    const invDist = 1 / dist;
-                    // Push surtout latéral sauf si au-dessus
-                    const pushY = dy > 0.6 ? 0 : dy * invDist * pen * 0.3;
-                    nx += dx * invDist * pen * 0.85;
-                    nz += dz * invDist * pen * 0.85;
-                    if (pushY > 0) ny += pushY;
-                }
-            }
-
         } else if (c.type === 'box') {
-            const boxTop = c.y + c.hh;
-            const pBot   = ny - PLAYER_H;
-            const inX    = nx > c.x-c.hw-PLAYER_R && nx < c.x+c.hw+PLAYER_R;
-            const inZ    = nz > c.z-c.hd-PLAYER_R && nz < c.z+c.hd+PLAYER_R;
-            const inY    = ny > c.y && pBot < boxTop;
+            // Passer en espace local de la box (rotation Y)
+            const { lx, lz } = worldToBoxLocal(nx, nz, c.x, c.z, c.rotY);
+
+            const inX = lx > -(c.hw + PLAYER_R) && lx < (c.hw + PLAYER_R);
+            const inZ = lz > -(c.hd + PLAYER_R) && lz < (c.hd + PLAYER_R);
+            const pBot = ny - PLAYER_H;
+
+            // Y du dessus du rocher à la position XZ du joueur (tilt)
+            // On calcule un Y de surface incliné selon tiltX/tiltZ
+            const topYAtPlayer = c.topY
+                + Math.tan(c.tiltX) * lz * 0.5
+                + Math.tan(c.tiltZ) * lx * 0.5;
+
+            const inY = ny > c.y - c.hh && pBot < topYAtPlayer + 0.2;
 
             if (inX && inZ && inY) {
-                if (pBot >= boxTop - 0.6) {
-                    ny    = boxTop + PLAYER_H;
+                // Le joueur peut-il se poser dessus ?
+                if (pBot >= topYAtPlayer - 0.7) {
+                    ny    = topYAtPlayer + PLAYER_H;
                     onTop = true;
                 } else {
-                    const ol = nx-(c.x-c.hw-PLAYER_R);
-                    const or2= (c.x+c.hw+PLAYER_R)-nx;
-                    const of2= nz-(c.z-c.hd-PLAYER_R);
-                    const ob = (c.z+c.hd+PLAYER_R)-nz;
-                    const m  = Math.min(ol,or2,of2,ob);
-                    if      (m===ol)  nx = c.x-c.hw-PLAYER_R;
-                    else if (m===or2) nx = c.x+c.hw+PLAYER_R;
-                    else if (m===of2) nz = c.z-c.hd-PLAYER_R;
-                    else              nz = c.z+c.hd+PLAYER_R;
+                    // Pousser vers l'extérieur de la face la plus proche
+                    const overlapX  = c.hw + PLAYER_R - Math.abs(lx);
+                    const overlapZ  = c.hd + PLAYER_R - Math.abs(lz);
+
+                    // Rotation inverse pour repousser en world space
+                    const cos = Math.cos(c.rotY), sin = Math.sin(c.rotY);
+                    if (overlapX < overlapZ) {
+                        const pushLX = lx > 0 ? overlapX : -overlapX;
+                        nx += pushLX * cos;
+                        nz += pushLX * sin;
+                    } else {
+                        const pushLZ = lz > 0 ? overlapZ : -overlapZ;
+                        nx += -pushLZ * sin;
+                        nz +=  pushLZ * cos;
+                    }
                 }
             }
         }
@@ -751,7 +839,7 @@ const keys = { z:false, s:false, q:false, d:false, shift:false };
 let jumpVel    = 0;
 let grounded   = true;
 let stamina    = 100;
-let smoothGroundY = null; // pour lerp du sol
+let smoothGroundY = null;
 
 addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
@@ -766,7 +854,7 @@ addEventListener('keyup', e => {
 });
 
 /* ===================================================== */
-/* MOUVEMENT — smooth sur pentes                         */
+/* MOUVEMENT                                              */
 /* ===================================================== */
 
 const _fwd   = new THREE.Vector3();
@@ -782,9 +870,8 @@ function updateMovement(dt) {
     _fwd.y=0; _right.y=0;
     _fwd.normalize(); _right.normalize();
 
-    // Sur les pentes, projeter le vecteur sur le plan du terrain
     const norm = terrainNormal(camera.position.x, camera.position.z);
-    const slope = 1 - Math.abs(norm.y); // 0 plat, 1 vertical
+    const slope = 1 - Math.abs(norm.y);
     const slopeSlowdown = 1 - slope * 0.5;
 
     const accel = (running ? 0.055 : 0.028) * slopeSlowdown;
@@ -798,25 +885,19 @@ function updateMovement(dt) {
     let ny = camera.position.y;
     let nz = camera.position.z + velocity.z;
 
-    // Gravité
     jumpVel = Math.max(jumpVel - 0.016, -1.2);
     ny += jumpVel;
 
-    // Colliders 3D
     const res = resolveColliders(nx, ny, nz);
     nx=res.x; ny=res.y; nz=res.z;
 
-    // Sol terrain avec lissage sur les pentes
     const targetGroundY = findY(nx, nz) + PLAYER_H;
 
     if (ny <= targetGroundY) {
-        // Smooth du Y sur sol uniquement quand on marche (pas en saut)
         if (jumpVel <= 0 && !res.onTop) {
             if (smoothGroundY === null) smoothGroundY = ny;
-            // Lerp rapide sur pente douce, plus lent sur forte pente
             const lerpSpeed = 0.25 + (1 - slope) * 0.25;
             smoothGroundY += (targetGroundY - smoothGroundY) * Math.min(1, lerpSpeed + dt * 8);
-            // Ne pas s'enfoncer mais lisser la montée
             ny = Math.max(smoothGroundY, targetGroundY - 0.05);
         } else {
             ny = targetGroundY;
@@ -840,7 +921,9 @@ function updateMovement(dt) {
 /* ===================================================== */
 
 const clock = new THREE.Clock();
-let elapsed = DAY_DURATION * 0.25; // démarre à midi
+// Démarre au matin (environ 8h = ~33% du cycle, angle ≈ PI*0.33)
+// sin(angle) > 0 = jour — on vise environ PI/4 pour un beau matin
+let elapsed = DAY_DURATION * (0.12);
 
 updateChunks(0, 0);
 
@@ -849,21 +932,17 @@ function animate() {
     const dt = Math.min(clock.getDelta(), 0.05);
     elapsed += dt;
 
-    // Vent
     const t = elapsed;
     for (const w of windObjects)
         w.mesh.rotation.z = Math.sin(t*w.speed+w.phase)*w.amp;
 
-    // Lucioles
     for (const f of fireflyData) {
         f.mesh.position.y  = f.baseY + Math.sin(t+f.phase)*0.5;
         f.mesh.position.x += Math.cos(t*0.3+f.phase)*0.008;
     }
 
-    // Mise à jour shader étoiles
     starMat.uniforms.uTime.value = elapsed;
 
-    // Fade-in chunks
     for (const [key, fd] of chunkFadeIn) {
         fd.alpha = Math.min(1, fd.alpha + dt*2.2);
         fd.group.traverse(obj => {
