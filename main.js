@@ -26,7 +26,6 @@ function _grad2(h, x, y) {
         default: return -x - y;
     }
 }
-
 function perlin(x, y) {
     const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
     const xf = x - Math.floor(x),   yf = y - Math.floor(y);
@@ -39,10 +38,9 @@ function perlin(x, y) {
         v
     );
 }
-
-function fbm(x, y, octaves = 6) {
+function fbm(x, y) {
     let v = 0, amp = 1, freq = 1, max = 0;
-    for (let i = 0; i < octaves; i++) {
+    for (let i = 0; i < 6; i++) {
         v   += perlin(x * freq, y * freq) * amp;
         max += amp;
         amp  *= 0.5;
@@ -51,9 +49,10 @@ function fbm(x, y, octaves = 6) {
     return v / max;
 }
 
+// Hauteur en world-space — seule source de vérité
 function getHeight(wx, wz) {
     const s = 0.003;
-    return fbm(wx * s, wz * s, 6) * 40
+    return fbm(wx * s, wz * s) * 40
          + Math.sin(wx * 0.015) * 5
          + Math.cos(wz * 0.012) * 4;
 }
@@ -63,7 +62,7 @@ function getHeight(wx, wz) {
 /* ===================================================== */
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x9bb4c7, 0.0022);
+scene.fog = new THREE.FogExp2(0x9bb4c7, 0.0025);
 scene.background = new THREE.Color(0x87a7c4);
 
 /* ===================================================== */
@@ -156,6 +155,7 @@ const matLeafs  = [
 const matStem   = new THREE.MeshStandardMaterial({ color: 0x2d4c1e });
 const matRock   = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 1 });
 const matGrass  = new THREE.MeshStandardMaterial({ color: 0x3f6b2d });
+const SHARED_MATS = new Set([matGround, matTrunk, matRoot, matStem, matRock, matGrass, ...matLeafs]);
 
 const FLOWER_COLORS = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
 
@@ -163,12 +163,12 @@ const FLOWER_COLORS = [0xff4444, 0x4444ff, 0xffff55, 0xffffff, 0xff66cc];
 /* CHUNK SYSTEM                                           */
 /* ===================================================== */
 
-const CHUNK_SIZE    = 120;
-const CHUNK_SEGS    = 40;
+const CHUNK_SIZE    = 120;   // taille en unités world
+const CHUNK_SEGS    = 48;    // subdivisions (pairs pour éviter artefacts)
 const LOAD_RADIUS   = 3;
 const UNLOAD_RADIUS = 5;
 
-const loadedChunks  = new Map(); // key → { group, cx, cz }
+const loadedChunks   = new Map(); // key → { group, cx, cz }
 const chunkColliders = new Map(); // key → [{cx,cy,cz,r}]
 
 function chunkKey(cx, cz) { return `${cx},${cz}`; }
@@ -199,8 +199,8 @@ function spawnScentLines(group, x, y, z, color) {
         scentLines.push({
             line, geo,
             baseX: x, baseY: y + 0.85, baseZ: z,
-            phase:  Math.random() * Math.PI * 2,
-            speed:  0.4 + Math.random() * 0.6,
+            phase: Math.random() * Math.PI * 2,
+            speed: 0.4 + Math.random() * 0.6,
             driftX: (Math.random() - 0.5) * 1.2,
             driftZ: (Math.random() - 0.5) * 0.4,
             offset: Math.random() * 3, SEG
@@ -231,60 +231,88 @@ function updateScentLines(t) {
 }
 
 /* ===================================================== */
-/* SEEDED RNG (déterministe par chunk)                    */
+/* SEEDED RNG déterministe par chunk                      */
 /* ===================================================== */
 
 function seededRng(cx, cz) {
     let s = ((cx * 73856093) ^ (cz * 19349663)) >>> 0;
+    if (s === 0) s = 1;
     return () => {
-        s = (s ^ (s << 13)) >>> 0;
-        s = (s ^ (s >> 17)) >>> 0;
-        s = (s ^ (s <<  5)) >>> 0;
-        return s / 0xFFFFFFFF;
+        s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+        s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+        s = (s ^ (s >>> 16)) >>> 0;
+        return s / 0x100000000;
     };
 }
 
 /* ===================================================== */
-/* BUILD CHUNK                                            */
+/* BUILD CHUNK TERRAIN                                    */
 /* ===================================================== */
+/*
+ * PlaneGeometry(W, H, segX, segZ) non-rotatée :
+ *   - vertices en espace LOCAL : X ∈ [-W/2, W/2], Y ∈ [-H/2, H/2], Z = 0
+ *   - après rotation.x = -PI/2 : local X → world X, local Y → world Z, local Z → world Y
+ *
+ * Pour un chunk centré en (cx*CHUNK_SIZE, 0, cz*CHUNK_SIZE) :
+ *   world_X = ox + local_X
+ *   world_Z = oz + local_Y   ← local Y devient world Z après la rotation
+ *
+ * On fixe donc pos[i+2] = getHeight(ox + pos[i], oz + pos[i+1])
+ * AVANT d'appliquer la rotation.
+ */
 
-function buildChunk(cx, cz) {
-    const group = new THREE.Group();
-    const ox = cx * CHUNK_SIZE;
-    const oz = cz * CHUNK_SIZE;
+function buildChunkTerrain(cx, cz) {
+    const ox = cx * CHUNK_SIZE;  // centre world X du chunk
+    const oz = cz * CHUNK_SIZE;  // centre world Z du chunk
 
-    // --- TERRAIN ---
     const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGS, CHUNK_SEGS);
     const pos = geo.attributes.position.array;
-    // PlaneGeometry sur XY avant rotation : x=pos[i], y=pos[i+1], z=pos[i+2]
-    // Après rotation.x = -PI/2 : x→x, y→z, z→y
-    // Donc on déplace Z (hauteur) en fonction de (ox+x, oz+y)
-    for (let i = 0; i < pos.length; i += 3) {
-        const lx = pos[i], ly = pos[i + 1];
-        pos[i + 2] = getHeight(ox + lx, oz + ly);
-    }
-    geo.computeVertexNormals();
-    const terrain = new THREE.Mesh(geo, matGround);
-    terrain.rotation.x = -Math.PI / 2;
-    terrain.position.set(ox, 0, oz);
-    terrain.receiveShadow = true;
-    group.add(terrain);
 
-    // --- OBJETS ---
+    for (let i = 0; i < pos.length; i += 3) {
+        // pos[i]   = local X  → world X = ox + local X
+        // pos[i+1] = local Y  → world Z = oz + local Y  (après rotation)
+        // pos[i+2] = local Z  → world Y = hauteur
+        const wx = ox + pos[i];
+        const wz = oz + pos[i + 1];
+        pos[i + 2] = getHeight(wx, wz);
+    }
+
+    geo.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geo, matGround);
+    mesh.rotation.x = -Math.PI / 2;          // après: localX→worldX, localY→worldZ, localZ→worldY
+    mesh.position.set(ox, 0, oz);             // centre du chunk
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+/* ===================================================== */
+/* BUILD CHUNK OBJETS                                     */
+/* ===================================================== */
+
+function buildChunkObjects(cx, cz, group) {
     const rng = seededRng(cx, cz);
+    const ox = cx * CHUNK_SIZE;
+    const oz = cz * CHUNK_SIZE;
     const half = CHUNK_SIZE / 2;
     const cols = [];
 
-    // Arbres
+    // Helper : position aléatoire dans le chunk en world-space
+    const rpos = () => ({
+        x: ox + (rng() - 0.5) * CHUNK_SIZE,
+        z: oz + (rng() - 0.5) * CHUNK_SIZE
+    });
+
+    /* ---- ARBRES ---- */
     const treeCount = 4 + (rng() * 6 | 0);
     for (let i = 0; i < treeCount; i++) {
-        const x = ox + (rng() - 0.5) * CHUNK_SIZE;
-        const z = oz + (rng() - 0.5) * CHUNK_SIZE;
-        const y = getHeight(x, z);
+        const { x, z } = rpos();
+        const y      = getHeight(x, z);
         const height = 18 + rng() * 18;
-        const tr = 1 + rng() * 0.6;
-        const tree = new THREE.Group();
+        const tr     = 1  + rng() * 0.6;
+        const tree   = new THREE.Group();
 
+        // Tronc (prolongé sous terre pour masquer les gaps)
         const trunk = new THREE.Mesh(
             new THREE.CylinderGeometry(tr * 0.55, tr * 1.1, height + 10, 8),
             matTrunk
@@ -295,10 +323,10 @@ function buildChunk(cx, cz) {
 
         // Racines
         for (let r = 0; r < 5; r++) {
-            const angle = (Math.PI * 2 / 5) * r;
-            const rLen = 2.5 + rng() * 1.5;
+            const angle  = (Math.PI * 2 / 5) * r;
+            const rLen   = 2.5 + rng() * 1.5;
             const rThick = 0.12 + rng() * 0.08;
-            const pivot = new THREE.Group();
+            const pivot  = new THREE.Group();
             pivot.position.set(Math.cos(angle) * tr * 0.85, 0.1, Math.sin(angle) * tr * 0.85);
             pivot.rotation.y = angle;
             pivot.rotation.z = Math.PI / 2 + 0.75 + rng() * 0.35;
@@ -315,8 +343,8 @@ function buildChunk(cx, cz) {
         const layers = 7 + (rng() * 4 | 0);
         for (let l = 0; l < layers; l++) {
             const ratio = l / layers;
-            const size = (1 - ratio) * (tr * 7) + 2;
-            const cone = new THREE.Mesh(
+            const size  = (1 - ratio) * (tr * 7) + 2;
+            const cone  = new THREE.Mesh(
                 new THREE.ConeGeometry(size, 7, 8),
                 matLeafs[rng() * 3 | 0]
             );
@@ -332,12 +360,11 @@ function buildChunk(cx, cz) {
         cols.push({ cx: x, cy: y + 12, cz: z, r: tr + 0.8 });
     }
 
-    // Rochers
+    /* ---- ROCHERS ---- */
     const rockCount = 2 + (rng() * 5 | 0);
     for (let i = 0; i < rockCount; i++) {
-        const x = ox + (rng() - 0.5) * CHUNK_SIZE;
-        const z = oz + (rng() - 0.5) * CHUNK_SIZE;
-        const y = getHeight(x, z);
+        const { x, z } = rpos();
+        const y    = getHeight(x, z);
         const size = 1 + rng() * 2;
         const rock = new THREE.Mesh(
             new THREE.DodecahedronGeometry(size, 0),
@@ -346,21 +373,19 @@ function buildChunk(cx, cz) {
         rock.position.set(x, y + size * 0.3, z);
         rock.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
         rock.scale.y = 0.6;
-        rock.castShadow = true;
-        rock.receiveShadow = true;
+        rock.castShadow = rock.receiveShadow = true;
         group.add(rock);
         cols.push({ cx: x, cy: y + size * 0.3, cz: z, r: size * 0.9 });
     }
 
-    // Fleurs
+    /* ---- FLEURS ---- */
     const flowerCount = 10 + (rng() * 25 | 0);
     for (let i = 0; i < flowerCount; i++) {
-        const x = ox + (rng() - 0.5) * CHUNK_SIZE;
-        const z = oz + (rng() - 0.5) * CHUNK_SIZE;
-        const y = getHeight(x, z);
+        const { x, z } = rpos();
+        const y     = getHeight(x, z);
         const color = FLOWER_COLORS[rng() * FLOWER_COLORS.length | 0];
-        const g = new THREE.Group();
-        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.7, 5), matStem);
+        const g     = new THREE.Group();
+        const stem  = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.7, 5), matStem);
         stem.position.y = 0.35;
         const head = new THREE.Mesh(
             new THREE.SphereGeometry(0.12, 6, 6),
@@ -374,17 +399,17 @@ function buildChunk(cx, cz) {
         spawnScentLines(group, x, y, z, color);
     }
 
-    // Herbe instanciée
-    const grassCount = 100 + (rng() * 150 | 0);
-    const grassMesh = new THREE.InstancedMesh(
+    /* ---- HERBE instanciée ---- */
+    const grassCount = 80 + (rng() * 120 | 0);
+    const grassMesh  = new THREE.InstancedMesh(
         new THREE.CylinderGeometry(0.02, 0.05, 1.2, 3),
         matGrass, grassCount
     );
     const d = new THREE.Object3D();
     for (let i = 0; i < grassCount; i++) {
-        const gx = ox + (rng() - 0.5) * CHUNK_SIZE;
-        const gz = oz + (rng() - 0.5) * CHUNK_SIZE;
-        d.position.set(gx, getHeight(gx, gz) + 0.5, gz);
+        const { x, z } = rpos();
+        const y = getHeight(x, z);
+        d.position.set(x, y + 0.5, z);
         d.scale.setScalar(0.7 + rng() * 1.8);
         d.rotation.y = rng() * Math.PI;
         d.updateMatrix();
@@ -392,47 +417,65 @@ function buildChunk(cx, cz) {
     }
     group.add(grassMesh);
 
-    // Lucioles
+    /* ---- LUCIOLES ---- */
     const ffCount = 1 + (rng() * 3 | 0);
     for (let i = 0; i < ffCount; i++) {
-        const fx = ox + (rng() - 0.5) * CHUNK_SIZE;
-        const fz = oz + (rng() - 0.5) * CHUNK_SIZE;
-        const fy = getHeight(fx, fz) + 2 + rng() * 4;
+        const { x, z } = rpos();
+        const y     = getHeight(x, z) + 2 + rng() * 4;
         const light = new THREE.PointLight(0xffffaa, 0.65, 9);
-        light.position.set(fx, fy, fz);
+        light.position.set(x, y, z);
         group.add(light);
-        fireflyList.push({ light, baseY: fy, baseX: fx, baseZ: fz, phase: rng() * 10 });
+        fireflyList.push({ light, baseY: y, baseX: x, baseZ: z, phase: rng() * 10 });
     }
 
+    return cols;
+}
+
+/* ===================================================== */
+/* LOAD / UNLOAD                                          */
+/* ===================================================== */
+
+function loadChunk(cx, cz) {
+    const key = chunkKey(cx, cz);
+    if (loadedChunks.has(key)) return;
+
+    const group = new THREE.Group();
+    group.add(buildChunkTerrain(cx, cz));
+    const cols = buildChunkObjects(cx, cz, group);
+
     scene.add(group);
-    loadedChunks.set(chunkKey(cx, cz), { group, cx, cz });
-    chunkColliders.set(chunkKey(cx, cz), cols);
+    loadedChunks.set(key, { group, cx, cz });
+    chunkColliders.set(key, cols);
 }
 
 function unloadChunk(key) {
     const chunk = loadedChunks.get(key);
     if (!chunk) return;
 
-    const set = new Set();
-    chunk.group.traverse(o => set.add(o));
+    const members = new Set();
+    chunk.group.traverse(o => members.add(o));
 
     for (let i = windObjects.length - 1; i >= 0; i--)
-        if (set.has(windObjects[i].mesh)) windObjects.splice(i, 1);
+        if (members.has(windObjects[i].mesh)) windObjects.splice(i, 1);
     for (let i = fireflyList.length - 1; i >= 0; i--)
-        if (set.has(fireflyList[i].light)) fireflyList.splice(i, 1);
+        if (members.has(fireflyList[i].light)) fireflyList.splice(i, 1);
     for (let i = scentLines.length - 1; i >= 0; i--)
-        if (set.has(scentLines[i].line)) scentLines.splice(i, 1);
+        if (members.has(scentLines[i].line)) scentLines.splice(i, 1);
 
     scene.remove(chunk.group);
     chunk.group.traverse(o => {
         if (o.geometry) o.geometry.dispose();
-        // matériaux créés à la volée (fleurs) : on les dispose
-        if (o.material && ![ matGround, matTrunk, matRoot, matStem, matRock, matGrass, ...matLeafs ].includes(o.material))
-            o.material.dispose();
+        if (o.material && !SHARED_MATS.has(o.material)) {
+            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+            else o.material.dispose();
+        }
     });
+
     loadedChunks.delete(key);
     chunkColliders.delete(key);
 }
+
+let lastChunkTick = 0;
 
 function updateChunks() {
     const pcx = Math.round(camera.position.x / CHUNK_SIZE);
@@ -440,8 +483,8 @@ function updateChunks() {
 
     for (let dz = -LOAD_RADIUS; dz <= LOAD_RADIUS; dz++)
     for (let dx = -LOAD_RADIUS; dx <= LOAD_RADIUS; dx++)
-        if (Math.hypot(dx, dz) <= LOAD_RADIUS && !loadedChunks.has(chunkKey(pcx + dx, pcz + dz)))
-            buildChunk(pcx + dx, pcz + dz);
+        if (Math.hypot(dx, dz) <= LOAD_RADIUS)
+            loadChunk(pcx + dx, pcz + dz);
 
     for (const [key, chunk] of loadedChunks)
         if (Math.hypot(chunk.cx - pcx, chunk.cz - pcz) > UNLOAD_RADIUS)
@@ -463,9 +506,9 @@ const playerVel = new THREE.Vector3();
 let   grounded  = false;
 let   stamina   = 100;
 
-const _fwd   = new THREE.Vector3();
-const _right  = new THREE.Vector3();
-const _up     = new THREE.Vector3(0, 1, 0);
+const _fwd  = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up    = new THREE.Vector3(0, 1, 0);
 
 function resolveSphere(s) {
     const cy_lo = camera.position.y - PLAYER_HEIGHT + PLAYER_RADIUS;
@@ -494,8 +537,8 @@ function physicsStep(dt) {
     _right.crossVectors(_fwd, _up).negate().normalize();
 
     const spd = MOVE_ACCEL * (running ? 1.8 : 1);
-    if (keys.z) { playerVel.x += _fwd.x * spd*dt;   playerVel.z += _fwd.z * spd*dt;   }
-    if (keys.s) { playerVel.x -= _fwd.x * spd*dt;   playerVel.z -= _fwd.z * spd*dt;   }
+    if (keys.z) { playerVel.x += _fwd.x  * spd*dt; playerVel.z += _fwd.z  * spd*dt; }
+    if (keys.s) { playerVel.x -= _fwd.x  * spd*dt; playerVel.z -= _fwd.z  * spd*dt; }
     if (keys.q) { playerVel.x -= _right.x * spd*dt; playerVel.z -= _right.z * spd*dt; }
     if (keys.d) { playerVel.x += _right.x * spd*dt; playerVel.z += _right.z * spd*dt; }
 
@@ -507,7 +550,7 @@ function physicsStep(dt) {
     camera.position.y += playerVel.y * dt;
     camera.position.z += playerVel.z * dt;
 
-    // Collisions chunks voisins
+    // Collisions sphères proches
     const pcx = Math.round(camera.position.x / CHUNK_SIZE);
     const pcz = Math.round(camera.position.z / CHUNK_SIZE);
     for (let dz = -1; dz <= 1; dz++)
@@ -552,7 +595,6 @@ addEventListener('keyup', e => {
 /* ===================================================== */
 
 let lastTime = performance.now();
-let lastChunkTick = 0;
 
 function animate(now) {
     requestAnimationFrame(animate);
@@ -560,17 +602,14 @@ function animate(now) {
     lastTime = now;
     const t = now * 0.001;
 
-    // Chunks — toutes les 250ms max
     if (now - lastChunkTick > 250) {
         updateChunks();
         lastChunkTick = now;
     }
 
-    // Vent
     for (const w of windObjects)
         w.mesh.rotation.z = Math.sin(t * w.speed + w.phase) * w.amp;
 
-    // Lucioles
     for (const f of fireflyList) {
         f.light.position.y = f.baseY + Math.sin(t + f.phase) * 0.6;
         f.light.position.x = f.baseX + Math.cos(t * 0.25 + f.phase) * 2;
