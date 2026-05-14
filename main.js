@@ -80,19 +80,20 @@ const moonLight = new THREE.DirectionalLight(0x3355aa, 0.0);
 scene.add(moonLight);
 
 /* ===================================================== */
-/* SPRITES SOLEIL & LUNE                                  */
+/* SPRITES SOLEIL & LUNE — plus grands et plus visibles  */
 /* ===================================================== */
 
 function makeCircleSprite(inner, outer, size) {
     const c = document.createElement('canvas');
-    c.width = c.height = 128;
+    c.width = c.height = 256;
     const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(64,64,0, 64,64,64);
+    const g = ctx.createRadialGradient(128,128,0, 128,128,128);
     g.addColorStop(0,   inner);
-    g.addColorStop(0.35, outer);
+    g.addColorStop(0.3, outer);
+    g.addColorStop(0.7, outer.replace(/[\d.]+\)$/, '0.15)'));
     g.addColorStop(1,   'rgba(0,0,0,0)');
     ctx.fillStyle = g;
-    ctx.fillRect(0,0,128,128);
+    ctx.fillRect(0,0,256,256);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
         map: new THREE.CanvasTexture(c),
         transparent: true, depthWrite: false,
@@ -102,32 +103,86 @@ function makeCircleSprite(inner, outer, size) {
     return sp;
 }
 
-const sunSprite  = makeCircleSprite('rgba(255,255,200,1)','rgba(255,180,30,0.5)', 130);
-const moonSprite = makeCircleSprite('rgba(220,230,255,1)','rgba(100,120,200,0.3)', 90);
+// Halo supplémentaire autour du soleil
+function makeGlowSprite(color, size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(128,128,0, 128,128,128);
+    g.addColorStop(0,   color);
+    g.addColorStop(0.4, color.replace(/[\d.]+\)$/, '0.3)'));
+    g.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,256,256);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(c),
+        transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending,
+    }));
+    sp.scale.set(size, size, 1);
+    return sp;
+}
+
+const sunSprite   = makeCircleSprite('rgba(255,255,220,1)', 'rgba(255,200,50,0.8)', 200);
+const sunGlow     = makeGlowSprite('rgba(255,160,30,0.6)', 500);
+const moonSprite  = makeCircleSprite('rgba(230,240,255,1)', 'rgba(150,170,220,0.7)', 140);
+const moonGlow    = makeGlowSprite('rgba(80,100,180,0.4)', 360);
 scene.add(sunSprite);
+scene.add(sunGlow);
 scene.add(moonSprite);
+scene.add(moonGlow);
 
 /* ===================================================== */
-/* ÉTOILES — Points sphériques, suit la caméra           */
+/* ÉTOILES — Plus grandes et plus brillantes             */
 /* ===================================================== */
 
-const STAR_COUNT = 800;
-const starPos = new Float32Array(STAR_COUNT * 3);
+const STAR_COUNT = 1200;
+const starPositions = new Float32Array(STAR_COUNT * 3);
+const starSizes     = new Float32Array(STAR_COUNT);
 for (let i = 0; i < STAR_COUNT; i++) {
-    // Distribution uniforme sur sphère
     const u = Math.random(), v = Math.random();
     const theta = 2 * Math.PI * u;
     const phi   = Math.acos(2 * v - 1);
     const r     = 1600;
-    starPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
-    starPos[i*3+1] = Math.abs(r * Math.cos(phi)) + 50; // hémisphère haute seulement
-    starPos[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+    starPositions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    starPositions[i*3+1] = Math.abs(r * Math.cos(phi)) + 80;
+    starPositions[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+    starSizes[i] = 1.5 + Math.random() * 3.5; // tailles variées
 }
 const starGeo = new THREE.BufferGeometry();
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const starMat = new THREE.PointsMaterial({
-    color: 0xffffff, size: 1.8, sizeAttenuation: false,
-    transparent: true, opacity: 0.0, depthWrite: false,
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+
+// Shader custom pour étoiles scintillantes avec taille variable
+const starMat = new THREE.ShaderMaterial({
+    uniforms: {
+        uOpacity: { value: 0.0 },
+        uTime:    { value: 0.0 },
+    },
+    vertexShader: `
+        attribute float size;
+        uniform float uTime;
+        varying float vTwinkle;
+        void main() {
+            vTwinkle = size;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = size * (1.0 + 0.3 * sin(uTime * 2.0 + size * 13.7));
+            gl_Position = projectionMatrix * mv;
+        }`,
+    fragmentShader: `
+        uniform float uOpacity;
+        varying float vTwinkle;
+        void main() {
+            vec2 uv = gl_PointCoord - 0.5;
+            float d = length(uv);
+            if (d > 0.5) discard;
+            float bright = 1.0 - d * 2.0;
+            bright = pow(bright, 1.5);
+            gl_FragColor = vec4(1.0, 1.0, 0.95, bright * uOpacity);
+        }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
 });
 const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
@@ -166,25 +221,36 @@ function updateDayNight(elapsed) {
     const cp = camera.position;
     const sd = new THREE.Vector3(sunX, sunY, ORBIT_R*0.3).normalize();
     const md = new THREE.Vector3(mnX,  mnY,  ORBIT_R*0.3).normalize();
-    sunSprite.position.copy(cp).addScaledVector(sd, 1400);
-    moonSprite.position.copy(cp).addScaledVector(md, 1400);
+
+    sunSprite.position.copy(cp).addScaledVector(sd, 1350);
+    sunGlow.position.copy(cp).addScaledVector(sd, 1340);
+    moonSprite.position.copy(cp).addScaledVector(md, 1350);
+    moonGlow.position.copy(cp).addScaledVector(md, 1340);
 
     const sf = Math.max(0, sinA);
     const mf = Math.max(0, -sinA);
 
-    sun.intensity       = sf * 2.8;
-    moonLight.intensity = 1.2 + mf * 1.0;
-    hemi.intensity      = 0.7 + sf * 0.3;
+    // Lever/coucher progressif avec smoothstep
+    const sfSmooth = sf * sf * (3 - 2*sf);
+    const mfSmooth = mf * mf * (3 - 2*mf);
 
-    sunSprite.material.opacity  = Math.pow(sf, 0.5);
-    moonSprite.material.opacity = Math.pow(mf, 0.5);
+    sun.intensity       = sfSmooth * 2.8;
+    moonLight.intensity = 0.08 + mfSmooth * 0.5;
+    hemi.intensity      = 0.15 + sfSmooth * 0.85;
 
-    renderer.toneMappingExposure = 1.1 + sf * 0.3;
+    sunSprite.material.opacity  = Math.pow(sf, 0.4);
+    sunGlow.material.opacity    = Math.pow(sf, 0.6) * 0.8;
+    moonSprite.material.opacity = Math.pow(mf, 0.4);
+    moonGlow.material.opacity   = Math.pow(mf, 0.6) * 0.7;
 
-    scene.fog.color.lerpColors(new THREE.Color(0x060c18), new THREE.Color(0x9bb4c7), sf);
+    renderer.toneMappingExposure = 0.8 + sfSmooth * 0.6;
 
-    // Étoiles visibles la nuit
-    starMat.opacity = mf * 0.85;
+    scene.fog.color.lerpColors(new THREE.Color(0x030609), new THREE.Color(0x9bb4c7), sfSmooth);
+    scene.fog.density = 0.003 + (1 - sfSmooth) * 0.002;
+
+    // Étoiles — visibles dès que le soleil descend
+    const starOpacity = Math.max(0, Math.min(1, (1 - sfSmooth * 1.8)));
+    starMat.uniforms.uOpacity.value = starOpacity * 0.95;
     stars.position.copy(camera.position);
 
     // Phases ciel
@@ -202,6 +268,38 @@ function updateDayNight(elapsed) {
         skyUniforms.bottomColor.value.copy(SKY.night.bottom);
     }
 }
+
+/* ===================================================== */
+/* MUSIQUE — boucle avec 2 min de silence                */
+/* ===================================================== */
+
+const SILENCE_BETWEEN = 120; // secondes
+
+function initMusic() {
+    const audio = new Audio('background_sound.mp3');
+    audio.volume = 0.45;
+
+    function playWithDelay() {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+    }
+
+    audio.addEventListener('ended', () => {
+        setTimeout(playWithDelay, SILENCE_BETWEEN * 1000);
+    });
+
+    // Démarrage au premier clic (autoplay policy)
+    let started = false;
+    const startAudio = () => {
+        if (started) return;
+        started = true;
+        playWithDelay();
+        document.removeEventListener('click', startAudio);
+    };
+    document.addEventListener('click', startAudio);
+}
+
+initMusic();
 
 /* ===================================================== */
 /* SIMPLEX NOISE                                          */
@@ -273,6 +371,16 @@ function findY(wx, wz) {
          + heightAt(x0+HSTEP,z0+HSTEP)*fu*fv;
 }
 
+/* Normale du terrain — pour smooth sur pentes */
+function terrainNormal(wx, wz) {
+    const d = HSTEP;
+    const hL = findY(wx-d, wz);
+    const hR = findY(wx+d, wz);
+    const hD = findY(wx, wz-d);
+    const hU = findY(wx, wz+d);
+    return new THREE.Vector3(hL-hR, 2*d, hD-hU).normalize();
+}
+
 /* ===================================================== */
 /* MATÉRIAUX & GÉOMÉTRIES PARTAGÉS                        */
 /* ===================================================== */
@@ -319,8 +427,8 @@ const globalColliders = [];
 /* ===================================================== */
 
 const CHUNK_SIZE   = 80;
-const CHUNK_SEGS   = 18;  // était 26
-const CHUNK_RADIUS = 2;   // était 3 — 5x5 chunks au lieu de 7x7
+const CHUNK_SEGS   = 18;
+const CHUNK_RADIUS = 2;
 
 const loadedChunks = new Map();
 const chunkFadeIn  = new Map();
@@ -338,12 +446,12 @@ function seededRng(seed) {
 function generateChunk(cx, cz) {
     const key = cx+','+cz;
     if (loadedChunks.has(key)) return;
-    loadedChunks.set(key, null); // réservation immédiate
+    loadedChunks.set(key, null);
     requestAnimationFrame(() => _buildChunk(cx, cz, key));
 }
 
 function _buildChunk(cx, cz, key) {
-    if (!loadedChunks.has(key)) return; // déchargé entre temps
+    if (!loadedChunks.has(key)) return;
 
     const originX = cx * CHUNK_SIZE;
     const originZ = cz * CHUNK_SIZE;
@@ -405,7 +513,7 @@ function _buildChunk(cx, cz, key) {
         localColliders.push({ type:'cylinder', x:wx, y:gy, z:wz, r:tr*1.5, h:trunkH+5 });
     }
 
-    /* Rochers */
+    /* Rochers — collision sphérique (plus précise) */
     const rockCount = 3 + (rng()*7|0);
     for (let i = 0; i < rockCount; i++) {
         const wx = originX + (rng()-0.5)*CHUNK_SIZE*0.88;
@@ -419,7 +527,11 @@ function _buildChunk(cx, cz, key) {
         rock.position.set(wx, gy+sy*0.5, wz);
         rock.castShadow = rock.receiveShadow = true;
         group.add(rock);
-        localColliders.push({ type:'box', x:wx, y:gy, z:wz, hw:sx*1.1, hh:sy, hd:sz*1.1 });
+
+        // Rayon sphérique moyen du rocher pour collision plus fidèle
+        const avgR = (sx + sy + sz) / 3 * 0.85;
+        const centerY = gy + sy * 0.5;
+        localColliders.push({ type:'sphere', x:wx, y:centerY, z:wz, r:avgR, baseY:gy, topH:sy });
     }
 
     /* Fleurs */
@@ -468,7 +580,7 @@ function _buildChunk(cx, cz, key) {
         fireflyData.push({ mesh:m, baseY:fy, phase:rng()*10 });
     }
 
-    // Fade-in : cloner les matériaux et mettre opacity=0
+    // Fade-in
     group.traverse(obj => {
         if (obj.isMesh) {
             const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -497,7 +609,6 @@ function unloadChunk(cx, cz) {
     scene.remove(data.group);
     data.group.traverse(obj => {
         if (!obj.isMesh) return;
-        // Ne pas disposer les géos/mats partagés
         if (obj.geometry && obj.geometry !== GEO.grass && obj.geometry !== GEO.ff &&
             obj.geometry !== GEO.stem && obj.geometry !== GEO.flower && obj.geometry !== GEO.rock)
             obj.geometry.dispose();
@@ -542,7 +653,7 @@ function updateChunks(px, pz) {
 }
 
 /* ===================================================== */
-/* PHYSIQUE 3D                                            */
+/* PHYSIQUE 3D — collisions améliorées                   */
 /* ===================================================== */
 
 const PLAYER_R = 0.4;
@@ -567,6 +678,35 @@ function resolveColliders(nx, ny, nz) {
                     const a = Math.atan2(dz,dx);
                     nx = c.x + Math.cos(a)*(c.r+PLAYER_R);
                     nz = c.z + Math.sin(a)*(c.r+PLAYER_R);
+                }
+            }
+
+        } else if (c.type === 'sphere') {
+            // Collision sphère vs capsule joueur (simplifié en point central)
+            const dx  = nx - c.x;
+            const dz  = nz - c.z;
+            // Y du point le plus proche de la sphère sur la capsule verticale du joueur
+            const playerMidY = ny - PLAYER_H * 0.5;
+            const dy  = playerMidY - c.y;
+            const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            const minDist = c.r + PLAYER_R * 1.4;
+
+            if (dist < minDist && dist > 0.001) {
+                // Peut-on monter dessus ?
+                const topY = c.y + c.r;
+                const pBot = ny - PLAYER_H;
+                if (pBot >= topY - 0.5 && dy > 0) {
+                    ny    = topY + PLAYER_H;
+                    onTop = true;
+                } else {
+                    // Repousser horizontalement principalement
+                    const pen = minDist - dist;
+                    const invDist = 1 / dist;
+                    // Push surtout latéral sauf si au-dessus
+                    const pushY = dy > 0.6 ? 0 : dy * invDist * pen * 0.3;
+                    nx += dx * invDist * pen * 0.85;
+                    nz += dz * invDist * pen * 0.85;
+                    if (pushY > 0) ny += pushY;
                 }
             }
 
@@ -608,9 +748,10 @@ document.body.addEventListener('click', () => controls.lock());
 
 const velocity = new THREE.Vector3();
 const keys = { z:false, s:false, q:false, d:false, shift:false };
-let jumpVel  = 0;
-let grounded = true;
-let stamina  = 100;
+let jumpVel    = 0;
+let grounded   = true;
+let stamina    = 100;
+let smoothGroundY = null; // pour lerp du sol
 
 addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
@@ -625,14 +766,14 @@ addEventListener('keyup', e => {
 });
 
 /* ===================================================== */
-/* MOUVEMENT                                              */
+/* MOUVEMENT — smooth sur pentes                         */
 /* ===================================================== */
 
 const _fwd   = new THREE.Vector3();
 const _right = new THREE.Vector3();
 
-function updateMovement() {
-    const running = keys.shift && stamina > 0 && keys.z;
+function updateMovement(dt) {
+    const running = keys.shift && stamina > 0 && (keys.z || keys.s || keys.q || keys.d);
     stamina = running ? Math.max(0,stamina-0.45) : Math.min(100,stamina+0.2);
     document.getElementById('sp').style.width = stamina+'%';
 
@@ -641,7 +782,12 @@ function updateMovement() {
     _fwd.y=0; _right.y=0;
     _fwd.normalize(); _right.normalize();
 
-    const accel = running ? 0.055 : 0.028;
+    // Sur les pentes, projeter le vecteur sur le plan du terrain
+    const norm = terrainNormal(camera.position.x, camera.position.z);
+    const slope = 1 - Math.abs(norm.y); // 0 plat, 1 vertical
+    const slopeSlowdown = 1 - slope * 0.5;
+
+    const accel = (running ? 0.055 : 0.028) * slopeSlowdown;
     if (keys.z) velocity.addScaledVector(_fwd,    accel);
     if (keys.s) velocity.addScaledVector(_fwd,   -accel);
     if (keys.q) velocity.addScaledVector(_right, -accel);
@@ -652,7 +798,7 @@ function updateMovement() {
     let ny = camera.position.y;
     let nz = camera.position.z + velocity.z;
 
-    // Gravité avec cap de vitesse de chute
+    // Gravité
     jumpVel = Math.max(jumpVel - 0.016, -1.2);
     ny += jumpVel;
 
@@ -660,15 +806,28 @@ function updateMovement() {
     const res = resolveColliders(nx, ny, nz);
     nx=res.x; ny=res.y; nz=res.z;
 
-    // Sol terrain
-    const groundY = findY(nx, nz) + PLAYER_H;
+    // Sol terrain avec lissage sur les pentes
+    const targetGroundY = findY(nx, nz) + PLAYER_H;
 
-    if (ny <= groundY) {
-        ny = groundY;
+    if (ny <= targetGroundY) {
+        // Smooth du Y sur sol uniquement quand on marche (pas en saut)
+        if (jumpVel <= 0 && !res.onTop) {
+            if (smoothGroundY === null) smoothGroundY = ny;
+            // Lerp rapide sur pente douce, plus lent sur forte pente
+            const lerpSpeed = 0.25 + (1 - slope) * 0.25;
+            smoothGroundY += (targetGroundY - smoothGroundY) * Math.min(1, lerpSpeed + dt * 8);
+            // Ne pas s'enfoncer mais lisser la montée
+            ny = Math.max(smoothGroundY, targetGroundY - 0.05);
+        } else {
+            ny = targetGroundY;
+            smoothGroundY = ny;
+        }
         if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
     } else if (res.onTop) {
+        smoothGroundY = ny;
         if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
     } else {
+        smoothGroundY = null;
         grounded = false;
     }
 
@@ -687,7 +846,7 @@ updateChunks(0, 0);
 
 function animate() {
     requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05); // cap à 50ms
+    const dt = Math.min(clock.getDelta(), 0.05);
     elapsed += dt;
 
     // Vent
@@ -701,6 +860,9 @@ function animate() {
         f.mesh.position.x += Math.cos(t*0.3+f.phase)*0.008;
     }
 
+    // Mise à jour shader étoiles
+    starMat.uniforms.uTime.value = elapsed;
+
     // Fade-in chunks
     for (const [key, fd] of chunkFadeIn) {
         fd.alpha = Math.min(1, fd.alpha + dt*2.2);
@@ -713,7 +875,6 @@ function animate() {
             }
         });
         if (fd.alpha >= 1) {
-            // Stabiliser une fois arrivé à 1
             fd.group.traverse(obj => {
                 if (!obj.isMesh) return;
                 const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -730,7 +891,7 @@ function animate() {
 
     updateDayNight(elapsed);
 
-    if (controls.isLocked) updateMovement();
+    if (controls.isLocked) updateMovement(dt);
 
     updateChunks(camera.position.x, camera.position.z);
 
