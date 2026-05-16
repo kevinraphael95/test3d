@@ -16,14 +16,13 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping; // Améliore le rendu des fortes lumières
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 /* ─── SCENE / CAMERA ─────────────────────────────────── */
 const scene = new THREE.Scene();
-// Brouillard étendu pour voir les décors lointains et les montagnes
 scene.fog = new THREE.FogExp2(0x0a1424, 0.003);
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 4000);
 camera.position.set(0, 10, 0);
@@ -38,7 +37,7 @@ scene.background = skyTex;
 const SKY = {
     day:    { top:[0.15,0.50,0.90], hor:[0.55,0.80,0.95] },
     sunset: { top:[0.20,0.08,0.40], hor:[0.95,0.35,0.10] },
-    night:  { top:[0.02,0.05,0.15], hor:[0.05,0.10,0.25] }, // Ambiance bleu sombre lumineuse
+    night:  { top:[0.02,0.05,0.15], hor:[0.05,0.10,0.25] },
     dawn:   { top:[0.20,0.08,0.40], hor:[0.90,0.45,0.20] },
 };
 
@@ -57,15 +56,14 @@ function drawSky(){
 const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 1.0);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xfffaed, 5.0); // Boosté pour plus de réalisme
+const sun = new THREE.DirectionalLight(0xfffaed, 5.0);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(2048); // Meilleure résolution d'ombre
+sun.shadow.mapSize.setScalar(2048);
 sun.shadow.camera.left = sun.shadow.camera.bottom = -200;
 sun.shadow.camera.right = sun.shadow.camera.top = 200;
 sun.shadow.camera.far = 2000;
 scene.add(sun);
 
-// Lune beaucoup plus lumineuse pour la nuit
 const moonLight = new THREE.DirectionalLight(0x5a88ff, 1.5); 
 moonLight.castShadow = true;
 moonLight.shadow.mapSize.setScalar(1024);
@@ -81,7 +79,6 @@ function makeGlowSprite(color){
     return new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
 }
 
-// Vrai corps sphérique pour le soleil + gros éclats
 const sunSphere = new THREE.Mesh(new THREE.SphereGeometry(30, 16, 16), new THREE.MeshBasicMaterial({color: 0xffffff}));
 const sunGlow = makeGlowSprite('rgba(255,210,130,0.8)');
 sunGlow.scale.setScalar(800);
@@ -156,7 +153,7 @@ const MAT={
     cone2:    new THREE.MeshStandardMaterial({color:0x1c3d1c, roughness:0.8}),
     rock:     new THREE.MeshStandardMaterial({color:0x555558,roughness:0.9,flatShading:true}),
     ground:   new THREE.MeshStandardMaterial({color:0x1b3014,roughness:1.0}),
-    mountain: new THREE.MeshStandardMaterial({color:0x222830,roughness:1.0,flatShading:true}), // Pour le décor au loin
+    mountain: new THREE.MeshStandardMaterial({color:0x222830,roughness:1.0,flatShading:true}),
     stem:     new THREE.MeshStandardMaterial({color:0x2d4c1e}),
     grass:    new THREE.MeshStandardMaterial({color:0x3f6b2d}),
     ff:       new THREE.MeshBasicMaterial({color:0xffffaa}),
@@ -169,9 +166,6 @@ const MAT={
     towRail:  new THREE.MeshStandardMaterial({color:0x1f130b,roughness:0.9}),
 };
 const CONE_MATS=[MAT.cone0,MAT.cone1,MAT.cone2];
-const FLOWER_COLORS=[0xff4444,0x4444ff,0xffff55,0xffffff,0xff66cc];
-const flowerCache={};
-function flowerMat(hex){ if(!flowerCache[hex])flowerCache[hex]=new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:0.2}); return flowerCache[hex]; }
 
 /* ─── GÉOMÉTRIES PARTAGÉES ───────────────────────────── */
 const GEO={
@@ -183,14 +177,13 @@ const GEO={
     mushStem: new THREE.CylinderGeometry(0.1,0.12,0.4,6),
     mushCap:  new THREE.SphereGeometry(0.5,8,5,0,Math.PI*2,0,Math.PI*0.55),
     mushSpot: new THREE.SphereGeometry(0.07,4,4),
-    towPlank: new THREE.BoxGeometry(1.6, 0.15, 0.5), // Marches d'escalier élargies
 };
 
-/* ─── MONTAGNES DE DÉCOR (INATTEIGNABLES) ─────────────── */
+/* ─── MONTAGNES DE DÉCOR ─────────────────────────────── */
 function createDistantMountains() {
     const mountainGroup = new THREE.Group();
     const totalMountains = 18;
-    const radius = 1500; // Très loin derrière le brouillard
+    const radius = 1500;
 
     for (let i = 0; i < totalMountains; i++) {
         const angle = (i / totalMountains) * Math.PI * 2 + Math.random() * 0.2;
@@ -198,12 +191,12 @@ function createDistantMountains() {
         const height = 250 + Math.random() * 200;
         const depth = 300 + Math.random() * 200;
 
-        const geo = new THREE.ConeGeometry(width / 2, height, 4); // Basse résolution (4 côtés = pyramide)
+        const geo = new THREE.ConeGeometry(width / 2, height, 4);
         const mesh = new THREE.Mesh(geo, MAT.mountain);
         
         const mX = Math.cos(angle) * radius;
         const mZ = Math.sin(angle) * radius;
-        const mY = fbm(mX, mZ) - 20; // Ancré au sol de base
+        const mY = fbm(mX, mZ) - 20;
 
         mesh.position.set(mX, mY + height / 2, mZ);
         mesh.rotation.y = Math.random() * Math.PI;
@@ -216,9 +209,9 @@ createDistantMountains();
 /* ─── GLOBAUX ────────────────────────────────────────── */
 const windObjects=[], fireflyData=[], globalColliders=[];
 
-/* ─── TOUR D'OBSERVATION CONFIGURÉE ──────────────────── */
+/* ─── TOUR D'OBSERVATION CORRIGÉE (ESCALIER CARRÉ & TRÈS LARGE) ─── */
 const TOWER_H  = 30;  
-const PLT_HALF = 3.5; // Elargie pour respirer
+const PLT_HALF = 3.5; 
 
 function chunkHasTower(cx,cz){
     if(cx===0&&cz===0) return true;
@@ -245,7 +238,7 @@ function buildTower(wx,wz,grp,lc){
     const tg=new THREE.Group();
     const pillarH = TOWER_H + 8;
 
-    // Piliers principaux
+    // Piliers principaux aux 4 coins du carré
     const pDef=[
         {ox:-PLT_HALF, oz:-PLT_HALF}, {ox: PLT_HALF, oz:-PLT_HALF},
         {ox: PLT_HALF, oz: PLT_HALF}, {ox:-PLT_HALF, oz: PLT_HALF}
@@ -255,44 +248,72 @@ function buildTower(wx,wz,grp,lc){
         mesh.position.set(p.ox, pillarH/2 - 4, p.oz);
         mesh.castShadow=true; mesh.receiveShadow=true;
         tg.add(mesh);
-        // AJOUT DES COLLIDERS AUX PILIERS DE LA TOUR au sol
         lc.push({type:'cylinder', x: wx + p.ox, y: gy, z: wz + p.oz, r: 0.9, h: TOWER_H});
     }
 
-    // ESCALIER EN COLIMAÇON AUTOUR DE LA TOUR (Fluide et large)
-    const stepsCount = 75;
-    const radiusSpiral = PLT_HALF + 1.2; 
-    for(let i=0; i<stepsCount; i++){
-        const pct = i / stepsCount;
-        const angle = pct * Math.PI * 4.5; // Fait un peu plus de 2 tours complets autour de la tour
-        const stepY = pct * TOWER_H;
+    // VRAI ESCALIER CARRÉ AUTOUR DES PILIERS (Très large et robuste)
+    const stepsPerSide = 12; 
+    const totalSteps = stepsPerSide * 4;
+    const stepWidth = 2.5;  // Marches très larges
+    const stepDepth = 0.8;  
+    const stepHeight = 0.18;
+    const stepGeo = new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth);
 
-        const sx = Math.cos(angle) * radiusSpiral;
-        const sz = Math.sin(angle) * radiusSpiral;
+    // Distance par rapport au centre pour s'enrouler parfaitement en carré
+    const offsetDist = PLT_HALF + stepWidth / 2; 
 
-        const step = new THREE.Mesh(GEO.towPlank, MAT.towPlank);
+    for(let i = 0; i < totalSteps; i++) {
+        const side = Math.floor(i / stepsPerSide) % 4; // 0=Nord, 1=Est, 2=Sud, 3=Ouest
+        const progressOnSide = (i % stepsPerSide) / stepsPerSide;
+        
+        const stepY = (i / totalSteps) * TOWER_H;
+        let sx = 0, sz = 0, rotY = 0;
+
+        // Répartition linéaire stricte sur les 4 faces d'une structure carrée
+        const lerpPos = (progressOnSide - 0.5) * (PLT_HALF * 2 + stepWidth);
+
+        if(side === 0) { // Face Nord
+            sx = lerpPos;
+            sz = -offsetDist;
+            rotY = 0;
+        } else if(side === 1) { // Face Est
+            sx = offsetDist;
+            sz = lerpPos;
+            rotY = Math.PI / 2;
+        } else if(side === 2) { // Face Sud
+            sx = -lerpPos;
+            sz = offsetDist;
+            rotY = Math.PI;
+        } else if(side === 3) { // Face Ouest
+            sx = -offsetDist;
+            sz = -lerpPos;
+            rotY = -Math.PI / 2;
+        }
+
+        const step = new THREE.Mesh(stepGeo, MAT.towPlank);
         step.position.set(sx, stepY, sz);
-        step.rotation.y = -angle + Math.PI/2;
+        step.rotation.y = rotY;
         step.castShadow = true; step.receiveShadow = true;
         tg.add(step);
 
-        // Collision douce individuelle pour chaque marche
-        lc.push({type:'cylinder', x: wx + sx, y: gy + stepY, z: wz + sz, r: 1.0, h: 0.3});
+        // Boîtes physiques dures individuelles indexées sur l'orientation carrée de la marche
+        const boundingR = Math.max(stepWidth, stepDepth) * 0.7;
+        lc.push({type:'cylinder', x: wx + sx, y: gy + stepY, z: wz + sz, r: boundingR, h: 0.3});
     }
 
     // PLANCHER DE LA PLATEFORME SUPÉRIEURE
-    const floorW = PLT_HALF * 2 + 1.5;
+    const floorW = PLT_HALF * 2 + 2.0;
     const plGeo = new THREE.BoxGeometry(floorW, 0.2, floorW);
     const platformFloor = new THREE.Mesh(plGeo, MAT.towPlank);
     platformFloor.position.set(0, TOWER_H, 0);
     platformFloor.receiveShadow = true;
     tg.add(platformFloor);
-    lc.push({type:'cylinder', x:wx, y:gy+TOWER_H, r: floorW*0.6, h:0.5});
+    lc.push({type:'cylinder', x:wx, y:gy+TOWER_H, r: floorW*0.7, h:0.5});
 
     // GARDE CORPS HAUT
     const railGeo = new THREE.BoxGeometry(floorW, 1.1, 0.1);
     for(let r=0; r<4; r++) {
-        if(r === 0) continue; // Laisse un côté ouvert pour l'arrivée de l'escalier en colimaçon !
+        if(r === 0) continue; // Garde un côté sans barrière pour laisser entrer le joueur depuis le haut du carré
         const rail = new THREE.Mesh(railGeo, MAT.towRail);
         rail.position.set(0, TOWER_H + 0.55, 0);
         if(r===1) { rail.position.z =  floorW/2; }
@@ -301,10 +322,10 @@ function buildTower(wx,wz,grp,lc){
         tg.add(rail);
     }
 
-    // TOIT SURÉLEVÉ (Pour ne pas se cogner la tête !)
+    // TOIT SURÉLEVÉ NETTEMENT POUR NE JAMAIS BLOQUER LE SAUT
     const roofHeight = 6.0; 
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(floorW * 0.7, roofHeight, 4), MAT.towLog);
-    roof.position.set(0, TOWER_H + 4.5, 0); // Remonté à +4.5 unités au dessus du plancher
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(floorW * 0.8, roofHeight, 4), MAT.towLog);
+    roof.position.set(0, TOWER_H + 6.0, 0); 
     roof.rotation.y = Math.PI/4;
     roof.castShadow = true;
     tg.add(roof);
@@ -314,9 +335,9 @@ function buildTower(wx,wz,grp,lc){
     return {wx,wz,clearR:PLT_HALF+6};
 }
 
-/* ─── CHUNKS ACTIFS & CHUNKS LOINTAINS (LOD POUR DÉCOR) ─── */
+/* ─── CHUNKS AVEC SYSTÈME DE LOD (PERFORMANCES OPTIMISÉES) ─── */
 const CHUNK_SIZE=80, CHUNK_SEGS=16, CHUNK_RADIUS=3, MAX_RENDER_DIST=6;
-const loadedChunks=new Map(), chunkFadeIn=new Map();
+const loadedChunks=new Map();
 function seededRng(seed){
     let s=(seed^0xdeadbeef)|0;
     return ()=>{ s=Math.imul(s^(s>>>16),0x45d9f3b); s=Math.imul(s^(s>>>16),0x45d9f3b); s^=s>>>16; return (s>>>0)/0xffffffff; };
@@ -325,7 +346,6 @@ function seededRng(seed){
 function generateChunk(cx,cz, isLowDetail=false){
     const key=cx+','+cz;
     if(loadedChunks.has(key)) {
-        // Si le chunk existait en LOD et qu'on s'approche, on le recrée proprement
         if(!isLowDetail && loadedChunks.get(key)?.lod === true) {
             unloadChunk(cx,cz);
         } else { return; }
@@ -340,7 +360,7 @@ function _buildChunk(cx,cz,key, isLowDetail){
     const r=seededRng(cx*73856093^cz*19349663);
     const grp=new THREE.Group(),lc=[];
 
-    /* SOL (Résolution réduite si loin pour économiser les performances) */
+    /* SOL : Résolution drastiquement divisée par 4 si lointain */
     const segs = isLowDetail ? 4 : CHUNK_SEGS;
     const tgeo=new THREE.PlaneGeometry(CHUNK_SIZE,CHUNK_SIZE,segs,segs);
     const vp=tgeo.attributes.position.array;
@@ -350,7 +370,7 @@ function _buildChunk(cx,cz,key, isLowDetail){
     terr.rotation.x=-Math.PI/2; terr.position.set(oX,0,oZ); terr.receiveShadow=true;
     grp.add(terr);
 
-    // Si c'est un chunk lointain (LOD décor), on s'arrête ici : pas d'arbres, pas de physique !
+    /* SI CHUNK LOINTAIN (LOD OPTIMISÉ) : Aucun élément additionnel pour économiser le CPU/GPU */
     if (isLowDetail) {
         scene.add(grp);
         loadedChunks.set(key,{group:grp,localColliders:[], lod: true});
@@ -448,14 +468,12 @@ function updateChunks(px,pz){
     if(cx===lastCX&&cz===lastCZ) return;
     lastCX=cx; lastCZ=cz;
 
-    // Chunks actifs proches (avec détails et physique)
     for(let dx=-CHUNK_RADIUS;dx<=CHUNK_RADIUS;dx++) {
         for(let dz=-CHUNK_RADIUS;dz<=CHUNK_RADIUS;dz++) {
             generateChunk(cx+dx, cz+dz, false);
         }
     }
 
-    // Chunks lointains (LOD Décor visuel uniquement pour boucher le fond)
     for(let dx=-MAX_RENDER_DIST;dx<=MAX_RENDER_DIST;dx++) {
         for(let dz=-MAX_RENDER_DIST;dz<=MAX_RENDER_DIST;dz++) {
             if(Math.abs(dx) > CHUNK_RADIUS || Math.abs(dz) > CHUNK_RADIUS) {
@@ -464,39 +482,56 @@ function updateChunks(px,pz){
         }
     }
 
-    // Unload ce qui est trop loin
     for(const[key]of loadedChunks){
         const[kcx,kcz]=key.split(',').map(Number);
         if(Math.abs(kcx-cx)>MAX_RENDER_DIST+1||Math.abs(kcz-cz)>MAX_RENDER_DIST+1) unloadChunk(kcx,kcz);
     }
 }
 
-/* ─── PHYSIQUE ───────────────────────────────────────── */
+/* ─── PHYSIQUE CORRIGÉE (SAUT SÉCURISÉ SUR LES COLLIDERS) ─── */
 const PLAYER_R=0.4,PLAYER_H=1.8;
+let hitSomethingTop = false;
+
 function resolveColliders(nx,ny,nz){
-    let onTop=false;
+    hitSomethingTop = false;
     for(const c of globalColliders){
         if(c.type==='cylinder'){
             const dx=nx-c.x,dz=nz-c.z,dXZ=Math.sqrt(dx*dx+dz*dz),cTop=c.y+c.h,pBot=ny-PLAYER_H;
             if(dXZ<c.r+PLAYER_R&&ny>c.y&&pBot<cTop){
-                if(pBot>=cTop-0.65){ny=cTop+PLAYER_H;onTop=true;}
-                else{const a=Math.atan2(dz,dx);nx=c.x+Math.cos(a)*(c.r+PLAYER_R);nz=c.z+Math.sin(a)*(c.r+PLAYER_R);}
+                if(pBot>=cTop-0.65){
+                    ny=cTop+PLAYER_H;
+                    hitSomethingTop=true;
+                }
+                else{
+                    const a=Math.atan2(dz,dx);
+                    nx=c.x+Math.cos(a)*(c.r+PLAYER_R);
+                    nz=c.z+Math.sin(a)*(c.r+PLAYER_R);
+                }
             }
         } else {
             const dx=nx-c.x,dz=nz-c.z,dxz=Math.sqrt(dx*dx+dz*dz),pBot=ny-PLAYER_H,dy=(ny-PLAYER_H*0.5)-c.y,dist3=Math.sqrt(dx*dx+dy*dy+dz*dz);
             if(dist3<c.r+PLAYER_R&&dist3>0.001){
-                if(pBot>=c.topY-0.8&&dy>-0.2){ny=c.topY+PLAYER_H;onTop=true;}
-                else if(dxz>0.01){const need=c.r+PLAYER_R*1.1;if(dxz<need){nx+=(dx/dxz)*(need-dxz);nz+=(dz/dxz)*(need-dxz);}}
+                if(pBot>=c.topY-0.8&&dy>-0.2){
+                    ny=c.topY+PLAYER_H;
+                    hitSomethingTop=true;
+                }
+                else if(dxz>0.01){
+                    const need=c.r+PLAYER_R*1.1;
+                    if(dxz<need){
+                        nx+=(dx/dxz)*(need-dxz);
+                        nz+=(dz/dxz)*(need-dxz);
+                    }
+                }
             }
         }
     }
-    return{x:nx,y:ny,z:nz,onTop};
+    return{x:nx,y:ny,z:nz,onTop:hitSomethingTop};
 }
 
 /* ─── CONTROLS ───────────────────────────────────────── */
 const controls=new PointerLockControls(camera,document.body);
 document.body.addEventListener('click',()=>controls.lock());
-const velocity=new THREE.Vector3(),keys={z:false,s:false,q:false,d:false,shift:false};
+const velocity=new THREE.Vector3(),keys={z:false,s:false,q:false,d:false,shift:false,space:false};
 let jumpVel=0,grounded=true;
 
 window.addEventListener('keydown',e=>{
@@ -512,8 +547,8 @@ window.addEventListener('keyup',e=>{
     if(e.key===' ')keys.space=false; if(e.key==='Shift')keys.shift=false;
 });
 
-/* ─── CYCLE JOUR/NUIT MIS À JOUR ─────────────────────── */
-const DAY_DURATION=600, ORBIT_R=1400; // Un peu plus rapide pour en profiter
+/* ─── CYCLE JOUR/NUIT ─────────────────────────────────── */
+const DAY_DURATION=600, ORBIT_R=1400;
 function updateDayNight(elapsed){
     const angle=((elapsed/DAY_DURATION)*Math.PI*2)%(Math.PI*2);
     const sinA=Math.sin(angle),sf=Math.max(0,sinA),sfS=sf*sf*(3-2*sf),mf=Math.max(0,-sinA),mfS=mf*mf*(3-2*mf);
@@ -525,13 +560,11 @@ function updateDayNight(elapsed){
     const cp=camera.position;
     const sd=new THREE.Vector3(sunX,sunY,ORBIT_R*0.25).normalize(),md=sd.clone().negate();
     
-    // Positionnement des vrais astres et de leurs éclats
     sunSphere.position.copy(cp).addScaledVector(sd,1300);
     sunGlow.position.copy(cp).addScaledVector(sd,1290);
     moonSphere.position.copy(cp).addScaledVector(md,1300);
     moonGlow.position.copy(cp).addScaledVector(md,1290);
     
-    // Intensités ajustées (Nuit très claire et bleutée)
     sun.intensity = sfS * 6.0; 
     moonLight.intensity = mfS * 2.0; 
     hemi.intensity = 0.4 + sfS*1.0 + mfS*0.4;
@@ -541,7 +574,6 @@ function updateDayNight(elapsed){
     moonSphere.material.opacity=Math.pow(mf,0.2);
     moonGlow.material.opacity=Math.pow(mf,0.5);
     
-    // Couleur du brouillard interpolée
     const targetFogColor = new THREE.Color();
     targetFogColor.lerpColors(new THREE.Color(0x050e22), new THREE.Color(0x3a5d7a), sfS);
     scene.fog.color.copy(targetFogColor);
@@ -568,7 +600,6 @@ function animate(){
     
     updateDayNight(elapsed);
     
-    // Déplacements joueur
     if(controls.isLocked){
         const speed=keys.shift?24:11;
         const input=new THREE.Vector3();
@@ -592,17 +623,29 @@ function animate(){
         nextY += jumpVel*dt;
         
         const terrY = findY(nextX,nextZ) + PLAYER_H;
-        if(nextY<=terrY){ nextY=terrY; jumpVel=0; grounded=true; }
-        else { grounded=false; }
         
-        if(keys.space && grounded){ jumpVel=13; grounded=false; }
-        
+        // Application stricte de la physique globale
         const res = resolveColliders(nextX,nextY,nextZ);
+        
+        if(res.y <= terrY){
+            res.y = terrY;
+            jumpVel = 0;
+            grounded = true;
+        } else if(res.onTop){
+            jumpVel = 0;
+            grounded = true;
+        } else {
+            grounded = false;
+        }
+        
+        if(keys.space && grounded){ 
+            jumpVel = 14; 
+            grounded = false; 
+        }
+        
         camera.position.set(res.x,res.y,res.z);
-        if(res.onTop){ jumpVel=0; grounded=true; }
     }
     
-    // Animations environnement
     for(const w of windObjects) w.mesh.rotation.z = Math.sin(elapsed*w.speed + w.phase)*w.amp;
     for(const f of fireflyData){
         f.mesh.position.y = f.baseY + Math.sin(elapsed*1.5 + f.phase)*0.6;
