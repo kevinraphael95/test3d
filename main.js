@@ -36,9 +36,12 @@ document.body.appendChild(renderer.domElement);
    SCENE / CAMERA
 ─────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x9bb4c7, 0.004);
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 2000);
+// Brouillard plus dense — horizon naturel à ~150u
+// La densité exacte sera mise à jour dynamiquement (jour/nuit)
+scene.fog = new THREE.FogExp2(0x9bb4c7, 0.010);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
 camera.position.set(0, 10, 0);
 
 /* ───────────────────────────────────────────────────────
@@ -140,9 +143,18 @@ scene.add(stars);
 ─────────────────────────────────────────────────────── */
 const DAY_DURATION = 1200, ORBIT_R = 1400;
 
+// Couleurs de brouillard qui matchent exactement le bas du skybox
+const FOG_DAY   = new THREE.Color(0x7dc7f0); // bleu clair horizon jour
+const FOG_NIGHT = new THREE.Color(0x060d1a); // bleu nuit profond
+const FOG_DAWN  = new THREE.Color(0xe07030); // orange aube/coucher
+
 function updateDayNight(elapsed) {
     const angle = ((elapsed/DAY_DURATION)*Math.PI*2)%(Math.PI*2);
     const sinA=Math.sin(angle), sf=Math.max(0,sinA), sfS=sf*sf*(3-2*sf), mf=Math.max(0,-sinA), mfS=mf*mf*(3-2*mf);
+
+    // Facteur "horizon" — max au lever/coucher (sinA proche de 0 côté jour)
+    const horizFactor = Math.max(0, 1 - Math.abs(sinA) * 4.0) * sf;
+
     const sunX=Math.cos(angle)*ORBIT_R, sunY=Math.sin(angle)*ORBIT_R;
     sun.position.set(sunX,sunY,ORBIT_R*0.25);
     moonLight.position.set(-sunX,-sunY,ORBIT_R*0.25);
@@ -155,11 +167,21 @@ function updateDayNight(elapsed) {
     hemi.intensity      = 0.30+sfS*0.9;
     sunSprite.material.opacity  = Math.pow(sf,0.35); sunGlow.material.opacity  = Math.pow(sf,0.5)*0.8;
     moonSprite.material.opacity = Math.pow(mf,0.35); moonGlow.material.opacity = Math.pow(mf,0.5)*0.7;
-    scene.fog.color.lerpColors(new THREE.Color(0x04091f), new THREE.Color(0x9bb4c7), sfS);
-    scene.fog.density = 0.003+(1-sfS)*0.002;
+
+    // Brouillard : couleur = horizon skybox exact + teinte coucher/lever
+    const fogBase = new THREE.Color().lerpColors(FOG_NIGHT, FOG_DAY, sfS);
+    fogBase.lerp(FOG_DAWN, horizFactor * 0.8);
+    scene.fog.color.copy(fogBase);
+
+    // Densité : plus dense la nuit (horizon plus court), moins dense le jour
+    // Jour : ~0.010 → horizon ~150u / Nuit : ~0.015 → horizon ~100u
+    scene.fog.density = 0.010 + (1 - sfS) * 0.005;
+
     starMat.uniforms.uOp.value = Math.max(0,1-sfS*2.0)*0.95;
     starMat.uniforms.uT.value  = elapsed;
     stars.position.copy(cp);
+
+    // Skybox — bas du gradient = même couleur que le brouillard pour seamless
     const a=angle, PI=Math.PI;
     if     (a<PI*0.20) lerpSky(SKY.dawn,  SKY.day,    a/(PI*0.20));
     else if(a<PI*0.75) setSky(SKY.day);
@@ -167,6 +189,10 @@ function updateDayNight(elapsed) {
     else if(a<PI*1.40) lerpSky(SKY.sunset,SKY.night,  (a-PI*1.10)/(PI*0.30));
     else if(a<PI*1.75) setSky(SKY.night);
     else               lerpSky(SKY.night, SKY.dawn,   (a-PI*1.75)/(PI*0.25));
+
+    // Forcer l'horizon du skybox à matcher exactement la couleur du brouillard
+    _hor = [fogBase.r, fogBase.g, fogBase.b];
+
     drawSky();
 }
 
@@ -228,7 +254,7 @@ function terrainNormal(wx,wz) {
 }
 
 /* ───────────────────────────────────────────────────────
-   MATÉRIAUX (tous partagés — 0 clone inutile)
+   MATÉRIAUX
 ─────────────────────────────────────────────────────── */
 const MAT = {
     trunk:  new THREE.MeshStandardMaterial({color:0x2a1a0e}),
@@ -250,27 +276,25 @@ const FLOWER_COLORS=[0xff4444,0x4444ff,0xffff55,0xffffff,0xff66cc];
 const flowerCache={};
 function flowerMat(hex){if(!flowerCache[hex])flowerCache[hex]=new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:0.1});return flowerCache[hex];}
 
-// Géométries partagées — JAMAIS recréées par chunk
 const GEO = {
-    grass:  new THREE.CylinderGeometry(0.015,0.04,0.5,3),
-    ff:     new THREE.SphereGeometry(0.07,4,4),
-    stem:   new THREE.CylinderGeometry(0.025,0.035,0.8,5),
-    flower: new THREE.SphereGeometry(0.14,6,6),
-    rock:   new THREE.DodecahedronGeometry(1,0),
+    grass:    new THREE.CylinderGeometry(0.015,0.04,0.5,3),
+    ff:       new THREE.SphereGeometry(0.07,4,4),
+    stem:     new THREE.CylinderGeometry(0.025,0.035,0.8,5),
+    flower:   new THREE.SphereGeometry(0.14,6,6),
+    rock:     new THREE.DodecahedronGeometry(1,0),
     mushStem: new THREE.CylinderGeometry(0.1,0.12,0.4,6),
     mushCap:  new THREE.SphereGeometry(0.5,8,5,0,Math.PI*2,0,Math.PI*0.55),
     mushSpot: new THREE.SphereGeometry(0.07,4,4),
 };
 
-
-
 /* ───────────────────────────────────────────────────────
    GLOBAUX
 ─────────────────────────────────────────────────────── */
 const windObjects=[], fireflyData=[], globalColliders=[];
+const _tmp = new THREE.Vector3();
 
 /* ───────────────────────────────────────────────────────
-   CHUNKS
+   CHUNKS — CHUNK_RADIUS=2, frustumCulled=true sur herbe
 ─────────────────────────────────────────────────────── */
 const CHUNK_SIZE=80, CHUNK_SEGS=14, CHUNK_RADIUS=2;
 const loadedChunks=new Map(), chunkFadeIn=new Map();
@@ -317,14 +341,13 @@ function _buildChunk(cx,cz,key) {
     terr.rotation.x=-Math.PI/2; terr.position.set(oX,0,oZ); terr.receiveShadow=true;
     grp.add(terr);
 
-    /* ARBRES — identiques à l'original doc3 */
+    /* ARBRES */
     const treeN=7+(r()*7|0), tpts=[];
     for(let i=0;i<treeN;i++){
         let wx,wz,ok=false,tries=0;
         do{wx=oX+(r()-0.5)*CHUNK_SIZE*0.85;wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;ok=!tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});}while(!ok&&++tries<15);
         tpts.push([wx,wz]);
         const gy=findY(wx,wz),h=28+r()*18,tr=1.4+r()*1.0,trunkH=h*(0.28+r()*0.08),tgr=new THREE.Group();
-        // Tronc — enfoncé de 3u dans le sol pour couvrir terrain irrégulier
         const trunk=new THREE.Mesh(new THREE.CylinderGeometry(tr*0.55,tr*1.4,trunkH+6,9),MAT.trunk);
         trunk.position.y=trunkH/2-3; trunk.castShadow=true; tgr.add(trunk);
         const layers=9+(r()*5|0),foliageH=h-trunkH;
@@ -345,7 +368,7 @@ function _buildChunk(cx,cz,key) {
         const rock=new THREE.Mesh(GEO.rock,MAT.rock);
         rock.scale.set(sx,sy,sz);
         rock.rotation.set((r()-0.5)*0.4, r()*Math.PI*2, (r()-0.5)*0.4);
-        rock.position.set(wx, gy+sy*0.35, wz); // légèrement enfoncé
+        rock.position.set(wx, gy+sy*0.35, wz);
         rock.castShadow=rock.receiveShadow=true; grp.add(rock);
         lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
     }
@@ -353,7 +376,7 @@ function _buildChunk(cx,cz,key) {
     /* FLEURS */
     for(let i=0,n=25+(r()*50|0);i<n;i++){
         const wx=oX+(r()-0.5)*CHUNK_SIZE*0.9, wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9, gy=findY(wx,wz);
-        const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st); // enfoncé 0.25u
+        const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
         const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
         hd.position.set(wx,gy+0.65,wz); grp.add(hd);
     }
@@ -368,25 +391,28 @@ function _buildChunk(cx,cz,key) {
         }
     }
 
-    /* HERBE instanciée */
+    /* HERBE — frustumCulled=true : Three.js skip si hors champ */
     const gn=50+(r()*50|0);
     const gm=new THREE.InstancedMesh(GEO.grass,MAT.grass,gn);
-    gm.frustumCulled=false;
+    gm.frustumCulled=true; // ← activé : gain GPU quand on regarde ailleurs
     const dm=new THREE.Object3D();
     for(let i=0;i<gn;i++){
         const wx=oX+(r()-0.5)*CHUNK_SIZE, wz=oZ+(r()-0.5)*CHUNK_SIZE;
-        dm.position.set(wx, findY(wx,wz)+0.0, wz); // enfoncé légèrement
+        dm.position.set(wx, findY(wx,wz), wz);
         dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
         gm.setMatrixAt(i,dm.matrix);
     }
-    gm.instanceMatrix.needsUpdate=true; grp.add(gm);
+    gm.instanceMatrix.needsUpdate=true;
+    // Bounding box explicite pour que frustum culling fonctionne correctement
+    gm.computeBoundingBox();
+    grp.add(gm);
 
     /* LUCIOLES */
     for(let i=0,n=2+(r()*6|0);i<n;i++){
         const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88, wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
         const fy=findY(wx,wz)+2+r()*4;
         const m=new THREE.Mesh(GEO.ff,MAT.ff); m.position.set(wx,fy,wz); grp.add(m);
-        fireflyData.push({mesh:m,baseY:fy,phase:r()*10,ox:wx,oz:wz});
+        fireflyData.push({mesh:m,baseY:fy,phase:r()*10});
     }
 
     /* FADE-IN */
@@ -407,10 +433,9 @@ function unloadChunk(cx,cz) {
     const key=cx+','+cz, data=loadedChunks.get(key);
     if(!data){loadedChunks.delete(key);return;}
     scene.remove(data.group);
+    const sharedGeos=Object.values(GEO);
     data.group.traverse(obj=>{
         if(!obj.isMesh) return;
-        // Dispose uniquement les géos non-partagées (terrain par chunk + cônes/troncs d'arbres)
-        const sharedGeos=Object.values(GEO);
         if(obj.geometry && !sharedGeos.includes(obj.geometry)) obj.geometry.dispose();
         const mats=Array.isArray(obj.material)?obj.material:[obj.material];
         mats.forEach(m=>{if(m._bOp!==undefined) m.dispose();});
@@ -524,8 +549,19 @@ function animate(){
     const dt=Math.min(clock.getDelta(),0.05);
     elapsed+=dt;
 
-    for(const w of windObjects) w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
-    for(const f of fireflyData){ f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5; f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008; }
+    // Vent — seulement les cônes proches (<70u) pour économiser le CPU
+    const cx=camera.position.x, cz=camera.position.z;
+    for(const w of windObjects){
+        w.mesh.getWorldPosition(_tmp);
+        const dx=_tmp.x-cx, dz=_tmp.z-cz;
+        if(dx*dx+dz*dz < 4900) // 70u²
+            w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
+    }
+
+    for(const f of fireflyData){
+        f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5;
+        f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008;
+    }
 
     for(const[key,fd]of chunkFadeIn){
         fd.alpha=Math.min(1,fd.alpha+dt*1.5);
