@@ -76,9 +76,9 @@ scene.add(hemi);
 
 const sun = new THREE.DirectionalLight(0xfff5e0, 3.0);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(2048);
-sun.shadow.camera.left = sun.shadow.camera.bottom = -200;
-sun.shadow.camera.right = sun.shadow.camera.top   =  200;
+sun.shadow.mapSize.setScalar(1024);
+sun.shadow.camera.left = sun.shadow.camera.bottom = -120;
+sun.shadow.camera.right = sun.shadow.camera.top   =  120;
 sun.shadow.camera.far = 1500;
 scene.add(sun);
 
@@ -187,7 +187,9 @@ initMusic();
 /* ───────────────────────────────────────────────────────
    SIMPLEX NOISE
 ─────────────────────────────────────────────────────── */
-const SEED = Math.random()*65536|0;
+const SEED = Math.random()*2147483647|0;
+document.getElementById('seed-display').textContent = 'seed : ' + SEED;
+console.log('Seed:', SEED);
 function buildPerm(seed) {
     const p=new Uint8Array(256); for(let i=0;i<256;i++) p[i]=i; let s=seed;
     for(let i=255;i>0;i--){ s=(s*1664525+1013904223)&0xffffffff; const j=(s>>>24)%(i+1); [p[i],p[j]]=[p[j],p[i]]; }
@@ -329,7 +331,7 @@ function _buildChunk(cx,cz,key) {
         for(let li=0;li<layers;li++){
             const ratio=li/(layers-1),coneY=trunkH+ratio*foliageH*0.90,radius=tr*4.5*(1-ratio*0.72)+1.5,coneH=(foliageH/layers)*2.2;
             const cone=new THREE.Mesh(new THREE.ConeGeometry(radius,coneH,8),CONE_MATS[(r()*3)|0]);
-            cone.position.y=coneY; cone.castShadow=true; tgr.add(cone);
+            cone.position.y=coneY; tgr.add(cone);
             windObjects.push({mesh:cone,phase:r()*10,speed:0.5,amp:0.012});
         }
         tgr.position.set(wx,gy,wz); grp.add(tgr);
@@ -384,7 +386,7 @@ function _buildChunk(cx,cz,key) {
         const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88, wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
         const fy=findY(wx,wz)+2+r()*4;
         const m=new THREE.Mesh(GEO.ff,MAT.ff); m.position.set(wx,fy,wz); grp.add(m);
-        fireflyData.push({mesh:m,baseY:fy,phase:r()*10});
+        fireflyData.push({mesh:m,baseY:fy,phase:r()*10,ox:wx,oz:wz});
     }
 
     /* FADE-IN */
@@ -526,7 +528,7 @@ function animate(){
     for(const f of fireflyData){ f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5; f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008; }
 
     for(const[key,fd]of chunkFadeIn){
-        fd.alpha=Math.min(1,fd.alpha+dt*0.6);
+        fd.alpha=Math.min(1,fd.alpha+dt*1.5);
         fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined)m.opacity=fd.alpha*m._bOp;});
         if(fd.alpha>=1){
             fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined){m.opacity=m._bOp;m.transparent=m._bOp<1;}});
