@@ -310,6 +310,17 @@ function _buildChunk(cx,cz,key){
         const rock=new THREE.Mesh(GEO.rock,MAT.rock);rock.scale.set(sx,sy,sz);rock.rotation.set((rng()-0.5)*0.4,rng()*Math.PI*2,(rng()-0.5)*0.4);rock.position.set(wx,gy+sy*0.48,wz);rock.castShadow=rock.receiveShadow=true;grp.add(rock);
         lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
     }
+
+   // Tour d'observation (rare)
+       const towerRoll = rng();
+       const isFirstChunk = cx===0 && cz===0;
+       if(isFirstChunk || towerRoll < 0.08) {
+           const wx = oX + (rng()-0.5)*CHUNK_SIZE*0.5;
+           const wz = oZ + (rng()-0.5)*CHUNK_SIZE*0.5;
+           const gy = findY(wx, wz);
+           buildWatchTower(wx, wz, gy, grp, lc);
+       }
+   
     for(let i=0,n=25+(rng()*50|0);i<n;i++){
         const wx=oX+(rng()-0.5)*CHUNK_SIZE*0.9,wz=oZ+(rng()-0.5)*CHUNK_SIZE*0.9,gy=findY(wx,wz);
         const st=new THREE.Mesh(GEO.stem,MAT.stem);st.position.set(wx,gy+0.4,wz);grp.add(st);
