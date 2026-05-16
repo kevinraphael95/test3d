@@ -339,35 +339,57 @@ function _buildChunk(cx,cz,key) {
         lc.push({type:'cylinder',x:wx,y:gy,z:wz,r:tr*1.7,h:trunkH+6});
     }
 
-    /* ROCHERS */
-    for(let i=0,n=3+(r()*7|0);i<n;i++){
-        const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88, wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88, gy=findY(wx,wz);
-        const sx=1.0+r()*2.6, sy=sx*(0.5+r()*0.5), sz=1.0+r()*2.6;
-        const rock=new THREE.Mesh(GEO.rock,MAT.rock);
-        rock.scale.set(sx,sy,sz);
-        rock.rotation.set((r()-0.5)*0.4, r()*Math.PI*2, (r()-0.5)*0.4);
-        rock.position.set(wx, gy+sy*0.35, wz); // légèrement enfoncé
-        rock.castShadow=rock.receiveShadow=true; grp.add(rock);
-        lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
-    }
+    
+ /* POINTS OCCUPÉS — empêche les overlaps */
+ const occupied = tpts.map(p => ({x:p[0], z:p[1], r:5})); // arbres déjà placés
+ function canPlace(wx, wz, minDist) {
+     return !occupied.some(o => {
+         const dx=wx-o.x, dz=wz-o.z;
+         return dx*dx+dz*dz < (minDist+o.r)*(minDist+o.r);
+     });
+ }
+ function occupy(wx, wz, r) { occupied.push({x:wx, z:wz, r}); }
 
-    /* FLEURS */
-    for(let i=0,n=25+(r()*50|0);i<n;i++){
-        const wx=oX+(r()-0.5)*CHUNK_SIZE*0.9, wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9, gy=findY(wx,wz);
-        const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st); // enfoncé 0.25u
-        const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
-        hd.position.set(wx,gy+0.65,wz); grp.add(hd);
-    }
+ /* ROCHERS */
+ for(let i=0,n=1+(r()*3|0);i<n;i++){
+     let wx,wz,tries=0;
+     do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
+     if(tries>=15) continue;
+     const gy=findY(wx,wz);
+     const sx=1.0+r()*2.6, sy=sx*(0.5+r()*0.5), sz=1.0+r()*2.6;
+     const rock=new THREE.Mesh(GEO.rock,MAT.rock);
+     rock.scale.set(sx,sy,sz);
+     rock.rotation.set((r()-0.5)*0.4, r()*Math.PI*2, (r()-0.5)*0.4);
+     rock.position.set(wx, gy+sy*0.35, wz);
+     rock.castShadow=rock.receiveShadow=true; grp.add(rock);
+     lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
+     occupy(wx, wz, Math.max(sx,sz)*1.2);
+ }
 
-    /* CHAMPIGNONS */
-    for(let i=0,n=1+(r()*4|0);i<n;i++){
-        const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88, wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
-        buildMushroom(wx,wz,findY(wx,wz),r,grp);
-        if(r()>0.5) for(let c=0,cn=2+(r()*3|0);c<cn;c++){
-            const ox=wx+(r()-0.5)*2.5, oz=wz+(r()-0.5)*2.5;
-            buildMushroom(ox,oz,findY(ox,oz),r,grp);
-        }
-    }
+ /* FLEURS */
+ for(let i=0,n=25+(r()*50|0);i<n;i++){
+     let wx,wz,tries=0;
+     do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
+     if(tries>=10) continue;
+     const gy=findY(wx,wz);
+     const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
+     const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
+     hd.position.set(wx,gy+0.65,wz); grp.add(hd);
+     occupy(wx, wz, 0.8);
+ }
+
+ /* CHAMPIGNONS */
+ for(let i=0,n=1+(r()*4|0);i<n;i++){
+     let wx,wz,tries=0;
+     do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
+     if(tries>=15) continue;
+     buildMushroom(wx,wz,findY(wx,wz),r,grp);
+     occupy(wx, wz, 1.5);
+     if(r()>0.5) for(let c=0,cn=2+(r()*3|0);c<cn;c++){
+         const ox=wx+(r()-0.5)*2.5, oz=wz+(r()-0.5)*2.5;
+         if(canPlace(ox,oz,1)) { buildMushroom(ox,oz,findY(ox,oz),r,grp); occupy(ox,oz,1); }
+     }
+ }
 
     /* HERBE instanciée */
     const gn=50+(r()*50|0);
