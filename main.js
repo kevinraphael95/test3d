@@ -232,6 +232,59 @@ function buildMushroom(wx,wz,gy,rng,grp){
     for(let s=0;s<3+(rng()*3|0);s++){const ang=rng()*Math.PI*2,rad=cR*(0.2+rng()*0.55);const spot=new THREE.Mesh(sg,MAT.mushSpot);spot.position.set(wx+Math.cos(ang)*rad,gy+sH+Math.sqrt(Math.max(0,cR*cR-rad*rad))*0.9,wz+Math.sin(ang)*rad);grp.add(spot);}
 }
 
+
+
+function buildWatchTower(wx, wz, gy, grp, lc) {
+    const H = 28, W = 3.5;
+    // 4 piliers
+    const pillarGeo = new THREE.CylinderGeometry(0.2, 0.25, H, 6);
+    const offsets = [[-W,-W],[W,-W],[-W,W],[W,W]];
+    for(const [ox,oz] of offsets) {
+        const p = new THREE.Mesh(pillarGeo, MAT.trunk);
+        p.position.set(wx+ox, gy+H/2, wz+oz);
+        p.castShadow = true;
+        grp.add(p);
+    }
+    // plancher de la plateforme
+    const floorGeo = new THREE.BoxGeometry(W*2+1, 0.3, W*2+1);
+    const floor = new THREE.Mesh(floorGeo, MAT.trunk);
+    floor.position.set(wx, gy+H, wz);
+    floor.castShadow = floor.receiveShadow = true;
+    grp.add(floor);
+    // rambarde
+    const railGeo = new THREE.BoxGeometry(W*2+1, 0.8, 0.15);
+    const railGeoZ = new THREE.BoxGeometry(0.15, 0.8, W*2+1);
+    const railY = gy+H+0.55;
+    for(const [rx,rz,geo] of [
+        [wx, rz=wz+(W+0.5), railGeo],
+        [wx, rz=wz-(W+0.5), railGeo],
+        [rx=wx+(W+0.5), wz, railGeoZ],
+        [rx=wx-(W+0.5), wz, railGeoZ],
+    ]) {
+        const r = new THREE.Mesh(geo, MAT.trunk);
+        r.position.set(rx, railY, rz);
+        grp.add(r);
+    }
+    // escalier en colimaçon
+    const steps = 18;
+    const stepGeo = new THREE.BoxGeometry(1.8, 0.2, 0.6);
+    for(let i = 0; i < steps; i++) {
+        const angle = (i/steps)*Math.PI*4;
+        const r = W+0.3;
+        const sx = wx + Math.cos(angle)*r;
+        const sz = wz + Math.sin(angle)*r;
+        const sy = gy + (i/steps)*H;
+        const step = new THREE.Mesh(stepGeo, MAT.trunk);
+        step.position.set(sx, sy, sz);
+        step.rotation.y = angle;
+        step.castShadow = true;
+        grp.add(step);
+    }
+    // collider pour le tronc central
+    lc.push({type:'cylinder', x:wx, y:gy, z:wz, r:W+0.5, h:H});
+}
+
+
 function generateChunk(cx,cz){const key=cx+','+cz;if(loadedChunks.has(key))return;loadedChunks.set(key,null);requestAnimationFrame(()=>_buildChunk(cx,cz,key));}
 
 function _buildChunk(cx,cz,key){
