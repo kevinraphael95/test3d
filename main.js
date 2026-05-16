@@ -2,21 +2,13 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
 
 /* ───────────────────────────────────────────────────────
-   DÉTECTION MOBILE — arrêt immédiat
+   DÉTECTION MOBILE
 ─────────────────────────────────────────────────────── */
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
               || ('ontouchstart' in window && navigator.maxTouchPoints > 1);
-
 if (isMobile) {
     document.body.style.cssText = 'margin:0;background:#0a0f0a;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden;';
-    document.body.innerHTML = `
-        <div style="text-align:center;color:#d4c9a8;font-family:'Cinzel',serif;padding:40px;max-width:340px;">
-            <div style="font-size:64px;margin-bottom:24px;">🌲</div>
-            <div style="font-size:28px;font-weight:700;letter-spacing:4px;margin-bottom:20px;text-shadow:0 0 30px rgba(212,184,150,0.6);">UNE FORÊT</div>
-            <div style="width:60px;height:2px;background:#d4c9a8;margin:0 auto 20px;opacity:0.5;"></div>
-            <div style="font-size:14px;letter-spacing:2px;opacity:0.75;line-height:2;">NON DISPONIBLE<br>SUR MOBILE</div>
-            <div style="font-size:11px;opacity:0.4;margin-top:24px;letter-spacing:1px;">Lancez depuis un ordinateur</div>
-        </div>`;
+    document.body.innerHTML = `<div style="text-align:center;color:#d4c9a8;font-family:'Cinzel',serif;padding:40px;max-width:340px;"><div style="font-size:64px;margin-bottom:24px;">🌲</div><div style="font-size:28px;font-weight:700;letter-spacing:4px;margin-bottom:20px;">UNE FORÊT</div><div style="font-size:14px;letter-spacing:2px;opacity:0.75;line-height:2;">NON DISPONIBLE<br>SUR MOBILE</div></div>`;
     throw new Error('mobile');
 }
 
@@ -36,13 +28,13 @@ document.body.appendChild(renderer.domElement);
    SCENE / CAMERA
 ─────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x9bb4c7, 60, 180);
+scene.fog = new THREE.Fog(0x7a9e8a, 20, 70);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(0, 10, 0);
 
 /* ───────────────────────────────────────────────────────
-   SKYBOX — canvas 2D dégradé
+   SKYBOX
 ─────────────────────────────────────────────────────── */
 const SKY_CANVAS = document.createElement('canvas');
 SKY_CANVAS.width = 2; SKY_CANVAS.height = 256;
@@ -73,7 +65,6 @@ function drawSky(){
 ─────────────────────────────────────────────────────── */
 const hemi = new THREE.HemisphereLight(0xddeeff, 0x3d2f1b, 1.2);
 scene.add(hemi);
-
 const sun = new THREE.DirectionalLight(0xfff5e0, 3.0);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(1024);
@@ -81,7 +72,6 @@ sun.shadow.camera.left = sun.shadow.camera.bottom = -120;
 sun.shadow.camera.right = sun.shadow.camera.top   =  120;
 sun.shadow.camera.far = 1500;
 scene.add(sun);
-
 const moonLight = new THREE.DirectionalLight(0x4466bb, 0);
 scene.add(moonLight);
 
@@ -120,7 +110,9 @@ const STAR_COUNT = 1200;
 const starPos = new Float32Array(STAR_COUNT*3), starSz = new Float32Array(STAR_COUNT);
 for (let i=0; i<STAR_COUNT; i++) {
     const th=2*Math.PI*Math.random(), ph=Math.acos(2*Math.random()-1), r=1600;
-    starPos[i*3]  =r*Math.sin(ph)*Math.cos(th); starPos[i*3+1]=Math.abs(r*Math.cos(ph))+80; starPos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+    starPos[i*3]  =r*Math.sin(ph)*Math.cos(th);
+    starPos[i*3+1]=Math.abs(r*Math.cos(ph))+80;
+    starPos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
     starSz[i]=1.5+Math.random()*3.5;
 }
 const starGeo = new THREE.BufferGeometry();
@@ -132,8 +124,7 @@ const starMat = new THREE.ShaderMaterial({
     fragmentShader: `uniform float uOp;void main(){vec2 uv=gl_PointCoord-.5;float d=length(uv);if(d>.5)discard;float b=pow(1.-d*2.,1.5);gl_FragColor=vec4(1.,1.,.95,b*uOp);}`,
     transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
 });
-const stars = new THREE.Points(starGeo, starMat);
-scene.add(stars);
+scene.add(new THREE.Points(starGeo, starMat));
 
 /* ───────────────────────────────────────────────────────
    CYCLE JOUR / NUIT
@@ -155,12 +146,15 @@ function updateDayNight(elapsed) {
     hemi.intensity      = 0.30+sfS*0.9;
     sunSprite.material.opacity  = Math.pow(sf,0.35); sunGlow.material.opacity  = Math.pow(sf,0.5)*0.8;
     moonSprite.material.opacity = Math.pow(mf,0.35); moonGlow.material.opacity = Math.pow(mf,0.5)*0.7;
-    scene.fog.color.lerpColors(new THREE.Color(0x04091f), new THREE.Color(0x9bb4c7), sfS);
-    scene.fog.near = 40 + sfS * 30;   // brouillard commence à 40u (jour) ou 40u (nuit)
-    scene.fog.far  = 120 + sfS * 80;  // se dissipe à 120u (nuit) ou 200u (jour)
+    scene.fog.color.lerpColors(new THREE.Color(0x04091f), new THREE.Color(0x7a9e8a), sfS);
+    scene.fog.near = 20 + sfS * 20;
+    scene.fog.far  = 70 + sfS * 50;
     starMat.uniforms.uOp.value = Math.max(0,1-sfS*2.0)*0.95;
     starMat.uniforms.uT.value  = elapsed;
-    stars.position.copy(cp);
+    // déplace les étoiles avec la caméra
+    starGeo.boundingSphere = null;
+    const starsObj = scene.children.find(c => c instanceof THREE.Points);
+    if(starsObj) starsObj.position.copy(cp);
     const a=angle, PI=Math.PI;
     if     (a<PI*0.20) lerpSky(SKY.dawn,  SKY.day,    a/(PI*0.20));
     else if(a<PI*0.75) setSky(SKY.day);
@@ -190,7 +184,6 @@ initMusic();
 ─────────────────────────────────────────────────────── */
 const SEED = Math.random()*2147483647|0;
 document.getElementById('seed-display').textContent = 'seed : ' + SEED;
-console.log('Seed:', SEED);
 function buildPerm(seed) {
     const p=new Uint8Array(256); for(let i=0;i<256;i++) p[i]=i; let s=seed;
     for(let i=255;i>0;i--){ s=(s*1664525+1013904223)&0xffffffff; const j=(s>>>24)%(i+1); [p[i],p[j]]=[p[j],p[i]]; }
@@ -229,41 +222,55 @@ function terrainNormal(wx,wz) {
 }
 
 /* ───────────────────────────────────────────────────────
-   MATÉRIAUX (tous partagés — 0 clone inutile)
+   MATÉRIAUX PARTAGÉS
 ─────────────────────────────────────────────────────── */
 const MAT = {
-    trunk:  new THREE.MeshStandardMaterial({color:0x2a1a0e}),
-    cone0:  new THREE.MeshStandardMaterial({color:0x0f240f}),
-    cone1:  new THREE.MeshStandardMaterial({color:0x163016}),
-    cone2:  new THREE.MeshStandardMaterial({color:0x1c3d1c}),
-    rock:   new THREE.MeshStandardMaterial({color:0x777777,roughness:1,flatShading:true}),
-    ground: new THREE.MeshStandardMaterial({color:0x243b1d,roughness:1}),
-    stem:   new THREE.MeshStandardMaterial({color:0x2d4c1e}),
-    grass:  new THREE.MeshStandardMaterial({color:0x3f6b2d}),
-    ff:     new THREE.MeshBasicMaterial({color:0xffffaa}),
+    trunk:    new THREE.MeshStandardMaterial({color:0x2a1a0e}),
+    cone0:    new THREE.MeshStandardMaterial({color:0x0f240f}),
+    cone1:    new THREE.MeshStandardMaterial({color:0x163016}),
+    cone2:    new THREE.MeshStandardMaterial({color:0x1c3d1c}),
+    rock:     new THREE.MeshStandardMaterial({color:0x777777,roughness:1,flatShading:true}),
+    ground:   new THREE.MeshStandardMaterial({color:0x243b1d,roughness:1}),
+    stem:     new THREE.MeshStandardMaterial({color:0x2d4c1e}),
+    grass:    new THREE.MeshStandardMaterial({color:0x3f6b2d}),
+    ff:       new THREE.MeshBasicMaterial({color:0xffffaa}),
     mushCap:  new THREE.MeshStandardMaterial({color:0xcc3300}),
     mushCap2: new THREE.MeshStandardMaterial({color:0xaa2200}),
     mushSpot: new THREE.MeshStandardMaterial({color:0xffffff}),
     mushStem: new THREE.MeshStandardMaterial({color:0xe8dcc8}),
+    // Tour d'observation — bois vieilli
+    towPost:  new THREE.MeshStandardMaterial({color:0x3d2510,roughness:0.95}),
+    towFloor: new THREE.MeshStandardMaterial({color:0x4a2e14,roughness:0.9}),
+    towRail:  new THREE.MeshStandardMaterial({color:0x2e1a0a,roughness:0.95}),
+    towRoof:  new THREE.MeshStandardMaterial({color:0x1e1008,roughness:1}),
+    towStair: new THREE.MeshStandardMaterial({color:0x3a2210,roughness:0.95}),
 };
 const CONE_MATS=[MAT.cone0,MAT.cone1,MAT.cone2];
 const FLOWER_COLORS=[0xff4444,0x4444ff,0xffff55,0xffffff,0xff66cc];
 const flowerCache={};
 function flowerMat(hex){if(!flowerCache[hex])flowerCache[hex]=new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:0.1});return flowerCache[hex];}
 
-// Géométries partagées — JAMAIS recréées par chunk
+/* ───────────────────────────────────────────────────────
+   GÉOMÉTRIES PARTAGÉES (créées une seule fois)
+─────────────────────────────────────────────────────── */
 const GEO = {
-    grass:  new THREE.CylinderGeometry(0.015,0.04,0.5,3),
-    ff:     new THREE.SphereGeometry(0.07,4,4),
-    stem:   new THREE.CylinderGeometry(0.025,0.035,0.8,5),
-    flower: new THREE.SphereGeometry(0.14,6,6),
-    rock:   new THREE.DodecahedronGeometry(1,0),
+    grass:    new THREE.CylinderGeometry(0.015,0.04,0.5,3),
+    ff:       new THREE.SphereGeometry(0.07,4,4),
+    stem:     new THREE.CylinderGeometry(0.025,0.035,0.8,5),
+    flower:   new THREE.SphereGeometry(0.14,6,6),
+    rock:     new THREE.DodecahedronGeometry(1,0),
     mushStem: new THREE.CylinderGeometry(0.1,0.12,0.4,6),
     mushCap:  new THREE.SphereGeometry(0.5,8,5,0,Math.PI*2,0,Math.PI*0.55),
     mushSpot: new THREE.SphereGeometry(0.07,4,4),
+    // Tour — géométries réutilisées
+    towPost:  new THREE.CylinderGeometry(0.18,0.22,1,6),   // pilier h=1, scalé en Y
+    towBeam:  new THREE.BoxGeometry(1,0.18,0.18),           // poutre h=1, scalé en X
+    towPlank: new THREE.BoxGeometry(1,0.12,0.5),            // planche plancher
+    towRail:  new THREE.BoxGeometry(1,0.1,0.1),             // garde-corps horizontal
+    towPost2: new THREE.CylinderGeometry(0.06,0.06,1,5),   // barreau garde-corps
+    towStep:  new THREE.BoxGeometry(1.2,0.12,0.35),         // marche d'escalier
+    towRoof:  new THREE.ConeGeometry(4.5,3,8),              // toit
 };
-
-
 
 /* ───────────────────────────────────────────────────────
    GLOBAUX
@@ -271,16 +278,133 @@ const GEO = {
 const windObjects=[], fireflyData=[], globalColliders=[];
 
 /* ───────────────────────────────────────────────────────
-   CHUNKS
+   TOUR D'OBSERVATION
+   Hauteur plateforme : TOWER_H (au-dessus du sol)
+   4 piliers, escalier colimaçon, plateforme, garde-corps, toit
 ─────────────────────────────────────────────────────── */
-const CHUNK_SIZE=80, CHUNK_SEGS=14, CHUNK_RADIUS=2;
-const loadedChunks=new Map(), chunkFadeIn=new Map();
+const TOWER_H = 38;   // hauteur plateforme (dépasse les arbres ~28-46u)
+const TOWER_R = 3.5;  // demi-largeur de la plateforme
 
-function seededRng(seed) {
-    let s=(seed^0xdeadbeef)|0;
-    return ()=>{ s=Math.imul(s^(s>>>16),0x45d9f3b); s=Math.imul(s^(s>>>16),0x45d9f3b); s^=s>>>16; return (s>>>0)/0xffffffff; };
+function buildTower(wx, wz, grp, lc) {
+    const gy = findY(wx, wz);
+    const tg = new THREE.Group();
+
+    // ── 4 PILIERS PRINCIPAUX ──
+    const pillarH = TOWER_H + 4;
+    const pillarOffsets = [[-TOWER_R,-TOWER_R],[TOWER_R,-TOWER_R],[TOWER_R,TOWER_R],[-TOWER_R,TOWER_R]];
+    for(const [ox,oz] of pillarOffsets) {
+        const p = new THREE.Mesh(GEO.towPost, MAT.towPost);
+        p.scale.set(1, pillarH, 1);
+        p.position.set(ox, pillarH/2 - 2, oz);
+        p.castShadow = true;
+        tg.add(p);
+    }
+
+    // ── CROIX DE RENFORT tous les 8u ──
+    for(let y=6; y<TOWER_H-2; y+=8) {
+        // X-axis beams
+        for(const oz of [-TOWER_R, TOWER_R]) {
+            const b = new THREE.Mesh(GEO.towBeam, MAT.towPost);
+            b.scale.set(TOWER_R*2, 1, 1);
+            b.position.set(0, y, oz);
+            tg.add(b);
+        }
+        // Z-axis beams
+        for(const ox of [-TOWER_R, TOWER_R]) {
+            const b = new THREE.Mesh(GEO.towBeam, MAT.towPost);
+            b.rotation.y = Math.PI/2;
+            b.scale.set(TOWER_R*2, 1, 1);
+            b.position.set(ox, y, 0);
+            tg.add(b);
+        }
+    }
+
+    // ── PLANCHER DE LA PLATEFORME ──
+    const floorW = TOWER_R*2 + 0.3;
+    const nPlanks = Math.ceil(floorW / 0.55);
+    for(let i=0; i<nPlanks; i++) {
+        const pl = new THREE.Mesh(GEO.towPlank, MAT.towFloor);
+        pl.scale.set(floorW/1, 1, 1);
+        pl.position.set(0, TOWER_H, -TOWER_R + i * (floorW/nPlanks) + floorW/nPlanks/2 - 0.1);
+        pl.receiveShadow = true;
+        tg.add(pl);
+    }
+
+    // ── GARDE-CORPS ──
+    const railH = TOWER_H + 1.1;
+    const railY2 = TOWER_H + 0.55;
+    const sides = [
+        {pos:[0, 0, -TOWER_R-0.15], rot:0, len:floorW+0.3},
+        {pos:[0, 0,  TOWER_R+0.15], rot:0, len:floorW+0.3},
+        {pos:[-TOWER_R-0.15, 0, 0], rot:Math.PI/2, len:floorW+0.3},
+        {pos:[ TOWER_R+0.15, 0, 0], rot:Math.PI/2, len:floorW+0.3},
+    ];
+    for(const s of sides) {
+        for(const dy of [railY2, railH]) {
+            const r = new THREE.Mesh(GEO.towRail, MAT.towRail);
+            r.scale.set(s.len, 1, 1);
+            r.rotation.y = s.rot;
+            r.position.set(s.pos[0], dy, s.pos[2]);
+            tg.add(r);
+        }
+        // barreaux
+        const n = Math.ceil(s.len / 0.7);
+        for(let i=0; i<=n; i++) {
+            const bar = new THREE.Mesh(GEO.towPost2, MAT.towRail);
+            bar.scale.set(1, 1.2, 1);
+            const t = (i/n - 0.5) * s.len;
+            const bx = s.rot===0 ? t : s.pos[0];
+            const bz = s.rot===0 ? s.pos[2] : t;
+            bar.position.set(bx, TOWER_H + 0.7, bz);
+            tg.add(bar);
+        }
+    }
+
+    // ── ESCALIER EN COLIMAÇON ──
+    const STEPS = 52;
+    const stepR = TOWER_R + 0.6;   // rayon de rotation autour du centre
+    for(let i=0; i<STEPS; i++) {
+        const frac = i / STEPS;
+        const angle = frac * Math.PI * 3.5 - Math.PI*0.5; // ~1.75 tours
+        const sy = frac * (TOWER_H - 0.5) + 0.3;
+        const sx = Math.cos(angle) * stepR;
+        const sz = Math.sin(angle) * stepR;
+        const step = new THREE.Mesh(GEO.towStep, MAT.towStair);
+        step.rotation.y = -angle;
+        step.position.set(sx, sy, sz);
+        step.castShadow = true;
+        tg.add(step);
+
+        // collider marche (cylindre fin)
+        lc.push({type:'cylinder', x:wx+sx, y:gy+sy-0.1, z:wz+sz, r:0.7, h:0.25});
+    }
+
+    // ── TOIT ──
+    const roof = new THREE.Mesh(GEO.towRoof, MAT.towRoof);
+    roof.position.set(0, TOWER_H + 1.1 + 1.5, 0);
+    roof.castShadow = true;
+    tg.add(roof);
+
+    tg.position.set(wx, gy, wz);
+    grp.add(tg);
+
+    // Collider plateforme (dalle épaisse)
+    lc.push({
+        type:'cylinder',
+        x:wx, y:gy+TOWER_H-0.2, z:wz,
+        r:TOWER_R+0.5, h:0.5
+    });
+    // Colliders piliers
+    for(const [ox,oz] of pillarOffsets) {
+        lc.push({type:'cylinder', x:wx+ox, y:gy, z:wz+oz, r:0.5, h:pillarH});
+    }
+
+    return { wx, wz, clearR: TOWER_R + 2 };
 }
 
+/* ───────────────────────────────────────────────────────
+   CHAMPIGNONS
+─────────────────────────────────────────────────────── */
 function buildMushroom(wx,wz,gy,r,grp) {
     const sc=0.12+r()*0.25, sH=0.45*sc, cR=0.5*sc;
     const sm=new THREE.Mesh(GEO.mushStem, MAT.mushStem);
@@ -294,6 +418,17 @@ function buildMushroom(wx,wz,gy,r,grp) {
         spot.position.set(wx+Math.cos(ang)*rad, gy+sH+Math.sqrt(Math.max(0,cR*cR-rad*rad))*0.9, wz+Math.sin(ang)*rad);
         grp.add(spot);
     }
+}
+
+/* ───────────────────────────────────────────────────────
+   CHUNKS
+─────────────────────────────────────────────────────── */
+const CHUNK_SIZE=80, CHUNK_SEGS=14, CHUNK_RADIUS=2;
+const loadedChunks=new Map(), chunkFadeIn=new Map();
+
+function seededRng(seed) {
+    let s=(seed^0xdeadbeef)|0;
+    return ()=>{ s=Math.imul(s^(s>>>16),0x45d9f3b); s=Math.imul(s^(s>>>16),0x45d9f3b); s^=s>>>16; return (s>>>0)/0xffffffff; };
 }
 
 function generateChunk(cx,cz) {
@@ -318,14 +453,50 @@ function _buildChunk(cx,cz,key) {
     terr.rotation.x=-Math.PI/2; terr.position.set(oX,0,oZ); terr.receiveShadow=true;
     grp.add(terr);
 
-    /* ARBRES — identiques à l'original doc3 */
+    /* ── TOUR D'OBSERVATION ──
+       - Chunk (0,0) : toujours au spawn (légèrement décalée pour ne pas bloquer le départ)
+       - Autres chunks : 20% de chance, position aléatoire dans le chunk
+    */
+    const isSpawnChunk = (cx===0 && cz===0);
+    const hasTower = isSpawnChunk || (r() < 0.20);
+    let towerInfo = null; // {wx, wz, clearR}
+
+    if(hasTower) {
+        let twx, twz;
+        if(isSpawnChunk) {
+            twx = 18; twz = 18; // décalé du spawn pour laisser de l'espace
+        } else {
+            twx = oX + (r()-0.5)*CHUNK_SIZE*0.6;
+            twz = oZ + (r()-0.5)*CHUNK_SIZE*0.6;
+        }
+        towerInfo = buildTower(twx, twz, grp, lc);
+    }
+
+    /* POINTS OCCUPÉS — empêche les overlaps */
+    const occupied = [];
+    if(towerInfo) occupied.push({x:towerInfo.wx, z:towerInfo.wz, r:towerInfo.clearR + 6});
+
+    function canPlace(wx, wz, minDist) {
+        return !occupied.some(o => {
+            const dx=wx-o.x, dz=wz-o.z;
+            return dx*dx+dz*dz < (minDist+o.r)*(minDist+o.r);
+        });
+    }
+    function occupy(wx, wz, rad) { occupied.push({x:wx, z:wz, r:rad}); }
+
+    /* ARBRES */
     const treeN=7+(r()*7|0), tpts=[];
     for(let i=0;i<treeN;i++){
         let wx,wz,ok=false,tries=0;
-        do{wx=oX+(r()-0.5)*CHUNK_SIZE*0.85;wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;ok=!tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});}while(!ok&&++tries<15);
+        do{
+            wx=oX+(r()-0.5)*CHUNK_SIZE*0.85;
+            wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
+            ok = canPlace(wx,wz,8) && !tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});
+        } while(!ok && ++tries<20);
+        if(tries>=20) continue;
         tpts.push([wx,wz]);
+        occupy(wx, wz, 8);
         const gy=findY(wx,wz),h=28+r()*18,tr=1.4+r()*1.0,trunkH=h*(0.28+r()*0.08),tgr=new THREE.Group();
-        // Tronc — enfoncé de 3u dans le sol pour couvrir terrain irrégulier
         const trunk=new THREE.Mesh(new THREE.CylinderGeometry(tr*0.55,tr*1.4,trunkH+6,9),MAT.trunk);
         trunk.position.y=trunkH/2-3; trunk.castShadow=true; tgr.add(trunk);
         const layers=9+(r()*5|0),foliageH=h-trunkH;
@@ -339,57 +510,46 @@ function _buildChunk(cx,cz,key) {
         lc.push({type:'cylinder',x:wx,y:gy,z:wz,r:tr*1.7,h:trunkH+6});
     }
 
-    
- /* POINTS OCCUPÉS — empêche les overlaps */
- const occupied = tpts.map(p => ({x:p[0], z:p[1], r:5})); // arbres déjà placés
- function canPlace(wx, wz, minDist) {
-     return !occupied.some(o => {
-         const dx=wx-o.x, dz=wz-o.z;
-         return dx*dx+dz*dz < (minDist+o.r)*(minDist+o.r);
-     });
- }
- function occupy(wx, wz, r) { occupied.push({x:wx, z:wz, r}); }
+    /* ROCHERS */
+    for(let i=0,n=1+(r()*3|0);i<n;i++){
+        let wx,wz,tries=0;
+        do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
+        if(tries>=15) continue;
+        const gy=findY(wx,wz);
+        const sx=1.0+r()*2.6, sy=sx*(0.5+r()*0.5), sz=1.0+r()*2.6;
+        const rock=new THREE.Mesh(GEO.rock,MAT.rock);
+        rock.scale.set(sx,sy,sz);
+        rock.rotation.set((r()-0.5)*0.4, r()*Math.PI*2, (r()-0.5)*0.4);
+        rock.position.set(wx, gy+sy*0.35, wz);
+        rock.castShadow=rock.receiveShadow=true; grp.add(rock);
+        lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
+        occupy(wx, wz, Math.max(sx,sz)*1.2);
+    }
 
- /* ROCHERS */
- for(let i=0,n=1+(r()*3|0);i<n;i++){
-     let wx,wz,tries=0;
-     do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
-     if(tries>=15) continue;
-     const gy=findY(wx,wz);
-     const sx=1.0+r()*2.6, sy=sx*(0.5+r()*0.5), sz=1.0+r()*2.6;
-     const rock=new THREE.Mesh(GEO.rock,MAT.rock);
-     rock.scale.set(sx,sy,sz);
-     rock.rotation.set((r()-0.5)*0.4, r()*Math.PI*2, (r()-0.5)*0.4);
-     rock.position.set(wx, gy+sy*0.35, wz);
-     rock.castShadow=rock.receiveShadow=true; grp.add(rock);
-     lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
-     occupy(wx, wz, Math.max(sx,sz)*1.2);
- }
+    /* FLEURS */
+    for(let i=0,n=25+(r()*50|0);i<n;i++){
+        let wx,wz,tries=0;
+        do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
+        if(tries>=10) continue;
+        const gy=findY(wx,wz);
+        const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
+        const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
+        hd.position.set(wx,gy+0.65,wz); grp.add(hd);
+        occupy(wx, wz, 0.8);
+    }
 
- /* FLEURS */
- for(let i=0,n=25+(r()*50|0);i<n;i++){
-     let wx,wz,tries=0;
-     do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
-     if(tries>=10) continue;
-     const gy=findY(wx,wz);
-     const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
-     const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
-     hd.position.set(wx,gy+0.65,wz); grp.add(hd);
-     occupy(wx, wz, 0.8);
- }
-
- /* CHAMPIGNONS */
- for(let i=0,n=1+(r()*4|0);i<n;i++){
-     let wx,wz,tries=0;
-     do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
-     if(tries>=15) continue;
-     buildMushroom(wx,wz,findY(wx,wz),r,grp);
-     occupy(wx, wz, 1.5);
-     if(r()>0.5) for(let c=0,cn=2+(r()*3|0);c<cn;c++){
-         const ox=wx+(r()-0.5)*2.5, oz=wz+(r()-0.5)*2.5;
-         if(canPlace(ox,oz,1)) { buildMushroom(ox,oz,findY(ox,oz),r,grp); occupy(ox,oz,1); }
-     }
- }
+    /* CHAMPIGNONS */
+    for(let i=0,n=1+(r()*4|0);i<n;i++){
+        let wx,wz,tries=0;
+        do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
+        if(tries>=15) continue;
+        buildMushroom(wx,wz,findY(wx,wz),r,grp);
+        occupy(wx, wz, 1.5);
+        if(r()>0.5) for(let c=0,cn=2+(r()*3|0);c<cn;c++){
+            const ox=wx+(r()-0.5)*2.5, oz=wz+(r()-0.5)*2.5;
+            if(canPlace(ox,oz,1)) { buildMushroom(ox,oz,findY(ox,oz),r,grp); occupy(ox,oz,1); }
+        }
+    }
 
     /* HERBE instanciée */
     const gn=50+(r()*50|0);
@@ -398,7 +558,7 @@ function _buildChunk(cx,cz,key) {
     const dm=new THREE.Object3D();
     for(let i=0;i<gn;i++){
         const wx=oX+(r()-0.5)*CHUNK_SIZE, wz=oZ+(r()-0.5)*CHUNK_SIZE;
-        dm.position.set(wx, findY(wx,wz)+0.0, wz); // enfoncé légèrement
+        dm.position.set(wx, findY(wx,wz), wz);
         dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
         gm.setMatrixAt(i,dm.matrix);
     }
@@ -432,7 +592,6 @@ function unloadChunk(cx,cz) {
     scene.remove(data.group);
     data.group.traverse(obj=>{
         if(!obj.isMesh) return;
-        // Dispose uniquement les géos non-partagées (terrain par chunk + cônes/troncs d'arbres)
         const sharedGeos=Object.values(GEO);
         if(obj.geometry && !sharedGeos.includes(obj.geometry)) obj.geometry.dispose();
         const mats=Array.isArray(obj.material)?obj.material:[obj.material];
@@ -548,13 +707,24 @@ function animate(){
     elapsed+=dt;
 
     for(const w of windObjects) w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
-    for(const f of fireflyData){ f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5; f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008; }
+    for(const f of fireflyData){
+        f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5;
+        f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008;
+    }
 
     for(const[key,fd]of chunkFadeIn){
         fd.alpha=Math.min(1,fd.alpha+dt*1.5);
-        fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined)m.opacity=fd.alpha*m._bOp;});
+        fd.group.traverse(obj=>{
+            if(!obj.isMesh)return;
+            const mats=Array.isArray(obj.material)?obj.material:[obj.material];
+            for(const m of mats)if(m._bOp!==undefined)m.opacity=fd.alpha*m._bOp;
+        });
         if(fd.alpha>=1){
-            fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined){m.opacity=m._bOp;m.transparent=m._bOp<1;}});
+            fd.group.traverse(obj=>{
+                if(!obj.isMesh)return;
+                const mats=Array.isArray(obj.material)?obj.material:[obj.material];
+                for(const m of mats)if(m._bOp!==undefined){m.opacity=m._bOp;m.transparent=m._bOp<1;}
+            });
             chunkFadeIn.delete(key);
         }
     }
