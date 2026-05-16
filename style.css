@@ -8,7 +8,10 @@ body {
     top: 20px;
     left: 20px;
     color: #f0e6d2;
-    font-family: Cinzel;
+    font-family: Cinzel, serif;
     text-shadow: 2px 2px 5px #000;
     z-index: 10;
+    pointer-events: none;
 }
+#top-ui h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: 3px; }
+#top-ui p  { margin: 0; font-size: 11px; opacity: 0.6; letter-spacing: 1px; }
