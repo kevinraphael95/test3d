@@ -260,21 +260,7 @@ const GEO = {
     mushSpot: new THREE.SphereGeometry(0.07,4,4),
 };
 
-// Géométries tronc/cône par taille — pool fixe
-const TRUNK_GEOS = [
-    new THREE.CylinderGeometry(0.77,1.96,30,9),  // grand
-    new THREE.CylinderGeometry(0.66,1.68,25,9),  // moyen
-    new THREE.CylinderGeometry(0.55,1.40,20,9),  // petit
-];
-const CONE_POOL = [
-    new THREE.ConeGeometry(1.5,9,8),
-    new THREE.ConeGeometry(2.5,9,8),
-    new THREE.ConeGeometry(3.5,9,8),
-    new THREE.ConeGeometry(4.5,9,8),
-    new THREE.ConeGeometry(5.5,9,8),
-    new THREE.ConeGeometry(6.5,9,8),
-    new THREE.ConeGeometry(7.5,9,8),
-];
+
 
 /* ───────────────────────────────────────────────────────
    GLOBAUX
@@ -329,39 +315,25 @@ function _buildChunk(cx,cz,key) {
     terr.rotation.x=-Math.PI/2; terr.position.set(oX,0,oZ); terr.receiveShadow=true;
     grp.add(terr);
 
-    /* ARBRES */
+    /* ARBRES — identiques à l'original doc3 */
     const treeN=7+(r()*7|0), tpts=[];
     for(let i=0;i<treeN;i++){
-        let wx,wz,tries=0;
-        do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.85; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85; tries++;
-        } while(tries<15 && tpts.some(p=>(p[0]-wx)**2+(p[1]-wz)**2<256));
+        let wx,wz,ok=false,tries=0;
+        do{wx=oX+(r()-0.5)*CHUNK_SIZE*0.85;wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;ok=!tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});}while(!ok&&++tries<15);
         tpts.push([wx,wz]);
-
-        const gy=findY(wx,wz);
-        const tier=r()*3|0;                        // 0=grand 1=moyen 2=petit
-        const heights=[28,22,17], h=heights[tier]+(r()*6-3);
-        const trunkH=h*(0.28+r()*0.08);
-        const tgr=new THREE.Group();
-
-        // Tronc — enfoncé de 2u pour couvrir le sol irrégulier
-        const trunk=new THREE.Mesh(TRUNK_GEOS[tier], MAT.trunk);
-        trunk.position.y=trunkH/2-2; trunk.castShadow=true; tgr.add(trunk);
-
-        // Feuillage — commence à 42% de h → bas du tronc visible
-        const layers=9+(r()*5|0), foliageH=h-trunkH;
+        const gy=findY(wx,wz),h=28+r()*18,tr=1.4+r()*1.0,trunkH=h*(0.28+r()*0.08),tgr=new THREE.Group();
+        // Tronc — enfoncé de 3u dans le sol pour couvrir terrain irrégulier
+        const trunk=new THREE.Mesh(new THREE.CylinderGeometry(tr*0.55,tr*1.4,trunkH+6,9),MAT.trunk);
+        trunk.position.y=trunkH/2-3; trunk.castShadow=true; tgr.add(trunk);
+        const layers=9+(r()*5|0),foliageH=h-trunkH;
         for(let li=0;li<layers;li++){
-            const ratio=li/(layers-1);
-            const size=Math.max(0, (1-ratio)*((tier===0?4.5:tier===1?3.8:3.0))*(1+r()*0.2)+1.2);
-            const cGeo=CONE_POOL[Math.min(CONE_POOL.length-1, Math.floor(size/1.1))];
-            const cone=new THREE.Mesh(cGeo, CONE_MATS[(r()*3)|0]);
-            cone.position.y=trunkH+ratio*foliageH*0.90;
-            cone.rotation.y=r()*Math.PI;
-            cone.castShadow=true; tgr.add(cone);
+            const ratio=li/(layers-1),coneY=trunkH+ratio*foliageH*0.90,radius=tr*4.5*(1-ratio*0.72)+1.5,coneH=(foliageH/layers)*2.2;
+            const cone=new THREE.Mesh(new THREE.ConeGeometry(radius,coneH,8),CONE_MATS[(r()*3)|0]);
+            cone.position.y=coneY; cone.castShadow=true; tgr.add(cone);
             windObjects.push({mesh:cone,phase:r()*10,speed:0.5,amp:0.012});
         }
-        tgr.position.set(wx,gy,wz);
-        grp.add(tgr);
-        lc.push({type:'cylinder',x:wx,y:gy,z:wz,r:TRUNK_GEOS[tier].parameters.radiusBottom*1.3,h:trunkH+6});
+        tgr.position.set(wx,gy,wz); grp.add(tgr);
+        lc.push({type:'cylinder',x:wx,y:gy,z:wz,r:tr*1.7,h:trunkH+6});
     }
 
     /* ROCHERS */
@@ -435,9 +407,9 @@ function unloadChunk(cx,cz) {
     scene.remove(data.group);
     data.group.traverse(obj=>{
         if(!obj.isMesh) return;
-        // Dispose uniquement les géos non-partagées (terrain par chunk)
-        const shared=Object.values(GEO).concat(TRUNK_GEOS,CONE_POOL);
-        if(obj.geometry && !shared.includes(obj.geometry)) obj.geometry.dispose();
+        // Dispose uniquement les géos non-partagées (terrain par chunk + cônes/troncs d'arbres)
+        const sharedGeos=Object.values(GEO);
+        if(obj.geometry && !sharedGeos.includes(obj.geometry)) obj.geometry.dispose();
         const mats=Array.isArray(obj.material)?obj.material:[obj.material];
         mats.forEach(m=>{if(m._bOp!==undefined) m.dispose();});
     });
