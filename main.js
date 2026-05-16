@@ -323,7 +323,7 @@ addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k in keys)keys[k]=fa
 const _fwd=new THREE.Vector3(),_right=new THREE.Vector3();
 function updateMovement(dt){
     const run=keys.shift&&stamina>0&&(keys.z||keys.s||keys.q||keys.d);
-    stamina=run?Math.max(0,stamina-0.45):Math.min(100,stamina+0.2);
+    stamina=100;
     _fwd.set(0,0,-1).applyQuaternion(camera.quaternion);_fwd.y=0;_fwd.normalize();
     _right.set(1,0,0).applyQuaternion(camera.quaternion);_right.y=0;_right.normalize();
     const slope=1-Math.abs(terrainNormal(camera.position.x,camera.position.z).y),accel=(run?0.055:0.028)*(1-slope*0.5);
