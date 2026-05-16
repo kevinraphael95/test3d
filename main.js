@@ -353,7 +353,7 @@ function animate(){
     for(const w of windObjects)w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
     for(const f of fireflyData){f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5;f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008;}
     for(const[key,fd]of chunkFadeIn){
-        fd.alpha=Math.min(1,fd.alpha+dt*2.2);
+        fd.alpha=Math.min(1,fd.alpha+dt*0.5);
         fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined)m.opacity=fd.alpha*m._bOp;});
         if(fd.alpha>=1){fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined){m.opacity=m._bOp;m.transparent=m._bOp<1;}});chunkFadeIn.delete(key);}
     }
