@@ -36,7 +36,7 @@ document.body.appendChild(renderer.domElement);
    SCENE / CAMERA
 ─────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x9bb4c7, 200, 600);
+scene.fog = new THREE.Fog(0x9bb4c7, 60, 180);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(0, 10, 0);
@@ -156,8 +156,8 @@ function updateDayNight(elapsed) {
     sunSprite.material.opacity  = Math.pow(sf,0.35); sunGlow.material.opacity  = Math.pow(sf,0.5)*0.8;
     moonSprite.material.opacity = Math.pow(mf,0.35); moonGlow.material.opacity = Math.pow(mf,0.5)*0.7;
     scene.fog.color.lerpColors(new THREE.Color(0x04091f), new THREE.Color(0x9bb4c7), sfS);
-    scene.fog.near = 150 + sfS * 100;   // se rapproche légèrement le jour
-    scene.fog.far  = 400 + sfS * 300;   // horizon plus lointain le jour, plus proche la nuit
+    scene.fog.near = 40 + sfS * 30;   // brouillard commence à 40u (jour) ou 40u (nuit)
+    scene.fog.far  = 120 + sfS * 80;  // se dissipe à 120u (nuit) ou 200u (jour)
     starMat.uniforms.uOp.value = Math.max(0,1-sfS*2.0)*0.95;
     starMat.uniforms.uT.value  = elapsed;
     stars.position.copy(cp);
