@@ -1,9 +1,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
 
-/* ───────────────────────────────────────────────────────
-   DÉTECTION MOBILE
-─────────────────────────────────────────────────────── */
+/* ─── MOBILE ─────────────────────────────────────────── */
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
               || ('ontouchstart' in window && navigator.maxTouchPoints > 1);
 if (isMobile) {
@@ -12,9 +10,7 @@ if (isMobile) {
     throw new Error('mobile');
 }
 
-/* ───────────────────────────────────────────────────────
-   RENDERER
-─────────────────────────────────────────────────────── */
+/* ─── RENDERER ───────────────────────────────────────── */
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -24,178 +20,150 @@ renderer.toneMapping = THREE.NoToneMapping;
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
-/* ───────────────────────────────────────────────────────
-   SCENE / CAMERA
-─────────────────────────────────────────────────────── */
+/* ─── SCENE / CAMERA ─────────────────────────────────── */
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x7a9e8a, 20, 70);
-
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(0, 10, 0);
 
-/* ───────────────────────────────────────────────────────
-   SKYBOX
-─────────────────────────────────────────────────────── */
+/* ─── SKYBOX ─────────────────────────────────────────── */
 const SKY_CANVAS = document.createElement('canvas');
 SKY_CANVAS.width = 2; SKY_CANVAS.height = 256;
 const SKY_CTX = SKY_CANVAS.getContext('2d');
 const skyTex = new THREE.CanvasTexture(SKY_CANVAS);
 scene.background = skyTex;
-
 const SKY = {
     day:    { top:[0.10,0.44,0.83], hor:[0.49,0.78,0.94] },
     sunset: { top:[0.23,0.06,0.38], hor:[1.00,0.27,0.00] },
     night:  { top:[0.04,0.08,0.21], hor:[0.09,0.13,0.25] },
     dawn:   { top:[0.23,0.06,0.38], hor:[1.00,0.40,0.13] },
 };
-function lerp3(a,b,t){ return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+function lerp3(a,b,t){ return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]; }
 function toCSS(rgb){ return `rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`; }
-let _top = SKY.day.top.slice(), _hor = SKY.day.hor.slice();
-function setSky(s)     { _top=s.top.slice(); _hor=s.hor.slice(); }
+let _top=SKY.day.top.slice(), _hor=SKY.day.hor.slice();
+function setSky(s){ _top=s.top.slice(); _hor=s.hor.slice(); }
 function lerpSky(a,b,t){ _top=lerp3(a.top,b.top,t); _hor=lerp3(a.hor,b.hor,t); }
 function drawSky(){
-    const g = SKY_CTX.createLinearGradient(0,0,0,256);
-    g.addColorStop(0, toCSS(_top)); g.addColorStop(1, toCSS(_hor));
-    SKY_CTX.fillStyle = g; SKY_CTX.fillRect(0,0,2,256);
-    skyTex.needsUpdate = true;
+    const g=SKY_CTX.createLinearGradient(0,0,0,256);
+    g.addColorStop(0,toCSS(_top)); g.addColorStop(1,toCSS(_hor));
+    SKY_CTX.fillStyle=g; SKY_CTX.fillRect(0,0,2,256); skyTex.needsUpdate=true;
 }
 
-/* ───────────────────────────────────────────────────────
-   LUMIÈRES
-─────────────────────────────────────────────────────── */
+/* ─── LUMIÈRES ───────────────────────────────────────── */
 const hemi = new THREE.HemisphereLight(0xddeeff, 0x3d2f1b, 1.2);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff5e0, 3.0);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(1024);
 sun.shadow.camera.left = sun.shadow.camera.bottom = -120;
-sun.shadow.camera.right = sun.shadow.camera.top   =  120;
+sun.shadow.camera.right = sun.shadow.camera.top = 120;
 sun.shadow.camera.far = 1500;
 scene.add(sun);
 const moonLight = new THREE.DirectionalLight(0x4466bb, 0);
 scene.add(moonLight);
 
-/* ───────────────────────────────────────────────────────
-   SPRITES SOLEIL & LUNE
-─────────────────────────────────────────────────────── */
-function makeCircleSprite(inner, outer) {
-    const c = document.createElement('canvas'); c.width = c.height = 256;
-    const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(128,128,0,128,128,128);
-    g.addColorStop(0, inner); g.addColorStop(0.3, outer);
-    g.addColorStop(0.7, outer.replace(/[\d.]+\)$/, '0.15)')); g.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.fillRect(0,0,256,256);
-    return new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending }));
+/* ─── SPRITES SOLEIL & LUNE ──────────────────────────── */
+function makeCircleSprite(inner,outer){
+    const c=document.createElement('canvas'); c.width=c.height=256;
+    const ctx=c.getContext('2d');
+    const g=ctx.createRadialGradient(128,128,0,128,128,128);
+    g.addColorStop(0,inner); g.addColorStop(0.3,outer);
+    g.addColorStop(0.7,outer.replace(/[\d.]+\)$/,'0.15)')); g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,256,256);
+    return new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
 }
-function makeGlowSprite(color) {
-    const c = document.createElement('canvas'); c.width = c.height = 256;
-    const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(128,128,0,128,128,128);
-    g.addColorStop(0, color); g.addColorStop(0.4, color.replace(/[\d.]+\)$/, '0.3)')); g.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.fillRect(0,0,256,256);
-    return new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending }));
+function makeGlowSprite(color){
+    const c=document.createElement('canvas'); c.width=c.height=256;
+    const ctx=c.getContext('2d');
+    const g=ctx.createRadialGradient(128,128,0,128,128,128);
+    g.addColorStop(0,color); g.addColorStop(0.4,color.replace(/[\d.]+\)$/,'0.3)')); g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,256,256);
+    return new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
 }
-const sunSprite  = makeCircleSprite('rgba(255,255,220,1)','rgba(255,200,50,0.8)');
-const sunGlow    = makeGlowSprite('rgba(255,160,30,0.6)');
-const moonSprite = makeCircleSprite('rgba(230,240,255,1)','rgba(150,170,220,0.7)');
-const moonGlow   = makeGlowSprite('rgba(80,100,180,0.4)');
+const sunSprite=makeCircleSprite('rgba(255,255,220,1)','rgba(255,200,50,0.8)');
+const sunGlow=makeGlowSprite('rgba(255,160,30,0.6)');
+const moonSprite=makeCircleSprite('rgba(230,240,255,1)','rgba(150,170,220,0.7)');
+const moonGlow=makeGlowSprite('rgba(80,100,180,0.4)');
 sunSprite.scale.setScalar(200); sunGlow.scale.setScalar(500);
 moonSprite.scale.setScalar(140); moonGlow.scale.setScalar(360);
-scene.add(sunSprite, sunGlow, moonSprite, moonGlow);
+scene.add(sunSprite,sunGlow,moonSprite,moonGlow);
 
-/* ───────────────────────────────────────────────────────
-   ÉTOILES
-─────────────────────────────────────────────────────── */
-const STAR_COUNT = 1200;
-const starPos = new Float32Array(STAR_COUNT*3), starSz = new Float32Array(STAR_COUNT);
-for (let i=0; i<STAR_COUNT; i++) {
+/* ─── ÉTOILES ────────────────────────────────────────── */
+const STAR_COUNT=1200;
+const starPos=new Float32Array(STAR_COUNT*3), starSz=new Float32Array(STAR_COUNT);
+for(let i=0;i<STAR_COUNT;i++){
     const th=2*Math.PI*Math.random(), ph=Math.acos(2*Math.random()-1), r=1600;
-    starPos[i*3]  =r*Math.sin(ph)*Math.cos(th);
-    starPos[i*3+1]=Math.abs(r*Math.cos(ph))+80;
-    starPos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+    starPos[i*3]=r*Math.sin(ph)*Math.cos(th); starPos[i*3+1]=Math.abs(r*Math.cos(ph))+80; starPos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
     starSz[i]=1.5+Math.random()*3.5;
 }
-const starGeo = new THREE.BufferGeometry();
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
-starGeo.setAttribute('size',     new THREE.BufferAttribute(starSz,1));
-const starMat = new THREE.ShaderMaterial({
-    uniforms: { uOp:{value:0}, uT:{value:0} },
-    vertexShader:   `attribute float size;uniform float uT;void main(){vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=size*(1.+0.3*sin(uT*2.+size*13.7));gl_Position=projectionMatrix*mv;}`,
-    fragmentShader: `uniform float uOp;void main(){vec2 uv=gl_PointCoord-.5;float d=length(uv);if(d>.5)discard;float b=pow(1.-d*2.,1.5);gl_FragColor=vec4(1.,1.,.95,b*uOp);}`,
-    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+const starGeo=new THREE.BufferGeometry();
+starGeo.setAttribute('position',new THREE.BufferAttribute(starPos,3));
+starGeo.setAttribute('size',new THREE.BufferAttribute(starSz,1));
+const starMat=new THREE.ShaderMaterial({
+    uniforms:{uOp:{value:0},uT:{value:0}},
+    vertexShader:`attribute float size;uniform float uT;void main(){vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=size*(1.+0.3*sin(uT*2.+size*13.7));gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`uniform float uOp;void main(){vec2 uv=gl_PointCoord-.5;float d=length(uv);if(d>.5)discard;float b=pow(1.-d*2.,1.5);gl_FragColor=vec4(1.,1.,.95,b*uOp);}`,
+    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
 });
-scene.add(new THREE.Points(starGeo, starMat));
+const starsObj=new THREE.Points(starGeo,starMat);
+scene.add(starsObj);
 
-/* ───────────────────────────────────────────────────────
-   CYCLE JOUR / NUIT
-─────────────────────────────────────────────────────── */
-const DAY_DURATION = 1200, ORBIT_R = 1400;
-
-function updateDayNight(elapsed) {
-    const angle = ((elapsed/DAY_DURATION)*Math.PI*2)%(Math.PI*2);
-    const sinA=Math.sin(angle), sf=Math.max(0,sinA), sfS=sf*sf*(3-2*sf), mf=Math.max(0,-sinA), mfS=mf*mf*(3-2*mf);
-    const sunX=Math.cos(angle)*ORBIT_R, sunY=Math.sin(angle)*ORBIT_R;
+/* ─── CYCLE JOUR/NUIT ────────────────────────────────── */
+const DAY_DURATION=1200, ORBIT_R=1400;
+function updateDayNight(elapsed){
+    const angle=((elapsed/DAY_DURATION)*Math.PI*2)%(Math.PI*2);
+    const sinA=Math.sin(angle),sf=Math.max(0,sinA),sfS=sf*sf*(3-2*sf),mf=Math.max(0,-sinA),mfS=mf*mf*(3-2*mf);
+    const sunX=Math.cos(angle)*ORBIT_R,sunY=Math.sin(angle)*ORBIT_R;
     sun.position.set(sunX,sunY,ORBIT_R*0.25);
     moonLight.position.set(-sunX,-sunY,ORBIT_R*0.25);
     const cp=camera.position;
-    const sd=new THREE.Vector3(sunX,sunY,ORBIT_R*0.25).normalize(), md=sd.clone().negate();
+    const sd=new THREE.Vector3(sunX,sunY,ORBIT_R*0.25).normalize(),md=sd.clone().negate();
     sunSprite.position.copy(cp).addScaledVector(sd,1350); sunGlow.position.copy(cp).addScaledVector(sd,1340);
     moonSprite.position.copy(cp).addScaledVector(md,1350); moonGlow.position.copy(cp).addScaledVector(md,1340);
-    sun.intensity       = 0.05+sfS*3.0;
-    moonLight.intensity = 0.20+mfS*0.5;
-    hemi.intensity      = 0.30+sfS*0.9;
-    sunSprite.material.opacity  = Math.pow(sf,0.35); sunGlow.material.opacity  = Math.pow(sf,0.5)*0.8;
-    moonSprite.material.opacity = Math.pow(mf,0.35); moonGlow.material.opacity = Math.pow(mf,0.5)*0.7;
-    scene.fog.color.lerpColors(new THREE.Color(0x04091f), new THREE.Color(0x7a9e8a), sfS);
-    scene.fog.near = 20 + sfS * 20;
-    scene.fog.far  = 70 + sfS * 50;
-    starMat.uniforms.uOp.value = Math.max(0,1-sfS*2.0)*0.95;
-    starMat.uniforms.uT.value  = elapsed;
-    // déplace les étoiles avec la caméra
-    starGeo.boundingSphere = null;
-    const starsObj = scene.children.find(c => c instanceof THREE.Points);
-    if(starsObj) starsObj.position.copy(cp);
-    const a=angle, PI=Math.PI;
-    if     (a<PI*0.20) lerpSky(SKY.dawn,  SKY.day,    a/(PI*0.20));
+    sun.intensity=0.05+sfS*3.0; moonLight.intensity=0.20+mfS*0.5; hemi.intensity=0.30+sfS*0.9;
+    sunSprite.material.opacity=Math.pow(sf,0.35); sunGlow.material.opacity=Math.pow(sf,0.5)*0.8;
+    moonSprite.material.opacity=Math.pow(mf,0.35); moonGlow.material.opacity=Math.pow(mf,0.5)*0.7;
+    scene.fog.color.lerpColors(new THREE.Color(0x04091f),new THREE.Color(0x7a9e8a),sfS);
+    scene.fog.near=20+sfS*20; scene.fog.far=70+sfS*50;
+    starMat.uniforms.uOp.value=Math.max(0,1-sfS*2.0)*0.95;
+    starMat.uniforms.uT.value=elapsed;
+    starsObj.position.copy(cp);
+    const a=angle,PI=Math.PI;
+    if(a<PI*0.20)      lerpSky(SKY.dawn,SKY.day,a/(PI*0.20));
     else if(a<PI*0.75) setSky(SKY.day);
-    else if(a<PI*1.10) lerpSky(SKY.day,   SKY.sunset, (a-PI*0.75)/(PI*0.35));
-    else if(a<PI*1.40) lerpSky(SKY.sunset,SKY.night,  (a-PI*1.10)/(PI*0.30));
+    else if(a<PI*1.10) lerpSky(SKY.day,SKY.sunset,(a-PI*0.75)/(PI*0.35));
+    else if(a<PI*1.40) lerpSky(SKY.sunset,SKY.night,(a-PI*1.10)/(PI*0.30));
     else if(a<PI*1.75) setSky(SKY.night);
-    else               lerpSky(SKY.night, SKY.dawn,   (a-PI*1.75)/(PI*0.25));
+    else               lerpSky(SKY.night,SKY.dawn,(a-PI*1.75)/(PI*0.25));
     drawSky();
 }
 
-/* ───────────────────────────────────────────────────────
-   MUSIQUE
-─────────────────────────────────────────────────────── */
-function initMusic() {
-    const audio = new Audio('background_sound.mp3');
-    audio.volume = 0.45;
-    const play = () => { audio.currentTime=0; audio.play().catch(()=>{}); };
-    audio.addEventListener('ended', ()=>setTimeout(play, 120000));
-    let started = false;
-    const start = () => { if(started)return; started=true; play(); document.removeEventListener('click',start); };
-    document.addEventListener('click', start);
+/* ─── MUSIQUE ────────────────────────────────────────── */
+function initMusic(){
+    const audio=new Audio('background_sound.mp3'); audio.volume=0.45;
+    const play=()=>{ audio.currentTime=0; audio.play().catch(()=>{}); };
+    audio.addEventListener('ended',()=>setTimeout(play,120000));
+    let started=false;
+    const start=()=>{ if(started)return; started=true; play(); document.removeEventListener('click',start); };
+    document.addEventListener('click',start);
 }
 initMusic();
 
-/* ───────────────────────────────────────────────────────
-   SIMPLEX NOISE
-─────────────────────────────────────────────────────── */
-const SEED = Math.random()*2147483647|0;
-document.getElementById('seed-display').textContent = 'seed : ' + SEED;
-function buildPerm(seed) {
-    const p=new Uint8Array(256); for(let i=0;i<256;i++) p[i]=i; let s=seed;
+/* ─── SIMPLEX NOISE ──────────────────────────────────── */
+const SEED=Math.random()*2147483647|0;
+document.getElementById('seed-display').textContent='seed : '+SEED;
+function buildPerm(seed){
+    const p=new Uint8Array(256); for(let i=0;i<256;i++)p[i]=i; let s=seed;
     for(let i=255;i>0;i--){ s=(s*1664525+1013904223)&0xffffffff; const j=(s>>>24)%(i+1); [p[i],p[j]]=[p[j],p[i]]; }
-    const perm=new Uint8Array(512); for(let i=0;i<512;i++) perm[i]=p[i&255]; return perm;
+    const perm=new Uint8Array(512); for(let i=0;i<512;i++)perm[i]=p[i&255]; return perm;
 }
-const perm=buildPerm(SEED), GRAD=[[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
-function simplex2(xin,yin) {
-    const F2=0.5*(Math.sqrt(3)-1), G2=(3-Math.sqrt(3))/6;
-    const s=(xin+yin)*F2, i=Math.floor(xin+s)|0, j=Math.floor(yin+s)|0, t=(i+j)*G2;
-    const x0=xin-(i-t), y0=yin-(j-t), i1=x0>y0?1:0, j1=x0>y0?0:1;
-    const x1=x0-i1+G2, y1=y0-j1+G2, x2=x0-1+2*G2, y2=y0-1+2*G2;
-    const ii=i&255, jj=j&255, g0=perm[ii+perm[jj]]%8, g1=perm[ii+i1+perm[jj+j1]]%8, g2=perm[ii+1+perm[jj+1]]%8;
+const perm=buildPerm(SEED),GRAD=[[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+function simplex2(xin,yin){
+    const F2=0.5*(Math.sqrt(3)-1),G2=(3-Math.sqrt(3))/6;
+    const s=(xin+yin)*F2,i=Math.floor(xin+s)|0,j=Math.floor(yin+s)|0,t=(i+j)*G2;
+    const x0=xin-(i-t),y0=yin-(j-t),i1=x0>y0?1:0,j1=x0>y0?0:1;
+    const x1=x0-i1+G2,y1=y0-j1+G2,x2=x0-1+2*G2,y2=y0-1+2*G2;
+    const ii=i&255,jj=j&255,g0=perm[ii+perm[jj]]%8,g1=perm[ii+i1+perm[jj+j1]]%8,g2=perm[ii+1+perm[jj+1]]%8;
     let n0=0,n1=0,n2=0;
     let t0=0.5-x0*x0-y0*y0; if(t0>=0){t0*=t0;n0=t0*t0*(GRAD[g0][0]*x0+GRAD[g0][1]*y0);}
     let t1=0.5-x1*x1-y1*y1; if(t1>=0){t1*=t1;n1=t1*t1*(GRAD[g1][0]*x1+GRAD[g1][1]*y1);}
@@ -204,27 +172,23 @@ function simplex2(xin,yin) {
 }
 function fbm(x,z){ return simplex2(x*0.002,z*0.002)*14+simplex2(x*0.008,z*0.008)*5+simplex2(x*0.025,z*0.025)*1.5; }
 
-/* ───────────────────────────────────────────────────────
-   HEIGHTMAP
-─────────────────────────────────────────────────────── */
-const HSTEP=0.5, hCache=new Map();
-function heightAt(wx,wz) {
-    const kx=Math.round(wx/HSTEP)|0, kz=Math.round(wz/HSTEP)|0, key=kx*100003+kz;
+/* ─── HEIGHTMAP ──────────────────────────────────────── */
+const HSTEP=0.5,hCache=new Map();
+function heightAt(wx,wz){
+    const kx=Math.round(wx/HSTEP)|0,kz=Math.round(wz/HSTEP)|0,key=kx*100003+kz;
     let h=hCache.get(key); if(h===undefined){h=fbm(wx,wz);hCache.set(key,h);} return h;
 }
-function findY(wx,wz) {
-    const x0=Math.floor(wx/HSTEP)*HSTEP, z0=Math.floor(wz/HSTEP)*HSTEP, fu=(wx-x0)/HSTEP, fv=(wz-z0)/HSTEP;
+function findY(wx,wz){
+    const x0=Math.floor(wx/HSTEP)*HSTEP,z0=Math.floor(wz/HSTEP)*HSTEP,fu=(wx-x0)/HSTEP,fv=(wz-z0)/HSTEP;
     return heightAt(x0,z0)*(1-fu)*(1-fv)+heightAt(x0+HSTEP,z0)*fu*(1-fv)+heightAt(x0,z0+HSTEP)*(1-fu)*fv+heightAt(x0+HSTEP,z0+HSTEP)*fu*fv;
 }
-function terrainNormal(wx,wz) {
+function terrainNormal(wx,wz){
     const d=HSTEP;
     return new THREE.Vector3(findY(wx-d,wz)-findY(wx+d,wz),2*d,findY(wx,wz-d)-findY(wx,wz+d)).normalize();
 }
 
-/* ───────────────────────────────────────────────────────
-   MATÉRIAUX PARTAGÉS
-─────────────────────────────────────────────────────── */
-const MAT = {
+/* ─── MATÉRIAUX ──────────────────────────────────────── */
+const MAT={
     trunk:    new THREE.MeshStandardMaterial({color:0x2a1a0e}),
     cone0:    new THREE.MeshStandardMaterial({color:0x0f240f}),
     cone1:    new THREE.MeshStandardMaterial({color:0x163016}),
@@ -238,22 +202,17 @@ const MAT = {
     mushCap2: new THREE.MeshStandardMaterial({color:0xaa2200}),
     mushSpot: new THREE.MeshStandardMaterial({color:0xffffff}),
     mushStem: new THREE.MeshStandardMaterial({color:0xe8dcc8}),
-    // Tour d'observation — bois vieilli
-    towPost:  new THREE.MeshStandardMaterial({color:0x3d2510,roughness:0.95}),
-    towFloor: new THREE.MeshStandardMaterial({color:0x4a2e14,roughness:0.9}),
-    towRail:  new THREE.MeshStandardMaterial({color:0x2e1a0a,roughness:0.95}),
-    towRoof:  new THREE.MeshStandardMaterial({color:0x1e1008,roughness:1}),
-    towStair: new THREE.MeshStandardMaterial({color:0x3a2210,roughness:0.95}),
+    towLog:   new THREE.MeshStandardMaterial({color:0x1e0f06,roughness:1.0}),
+    towPlank: new THREE.MeshStandardMaterial({color:0x2c1a0a,roughness:0.95}),
+    towRail:  new THREE.MeshStandardMaterial({color:0x170c04,roughness:1.0}),
 };
 const CONE_MATS=[MAT.cone0,MAT.cone1,MAT.cone2];
 const FLOWER_COLORS=[0xff4444,0x4444ff,0xffff55,0xffffff,0xff66cc];
 const flowerCache={};
-function flowerMat(hex){if(!flowerCache[hex])flowerCache[hex]=new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:0.1});return flowerCache[hex];}
+function flowerMat(hex){ if(!flowerCache[hex])flowerCache[hex]=new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:0.1}); return flowerCache[hex]; }
 
-/* ───────────────────────────────────────────────────────
-   GÉOMÉTRIES PARTAGÉES (créées une seule fois)
-─────────────────────────────────────────────────────── */
-const GEO = {
+/* ─── GÉOMÉTRIES PARTAGÉES ───────────────────────────── */
+const GEO={
     grass:    new THREE.CylinderGeometry(0.015,0.04,0.5,3),
     ff:       new THREE.SphereGeometry(0.07,4,4),
     stem:     new THREE.CylinderGeometry(0.025,0.035,0.8,5),
@@ -262,240 +221,278 @@ const GEO = {
     mushStem: new THREE.CylinderGeometry(0.1,0.12,0.4,6),
     mushCap:  new THREE.SphereGeometry(0.5,8,5,0,Math.PI*2,0,Math.PI*0.55),
     mushSpot: new THREE.SphereGeometry(0.07,4,4),
-    // Tour — géométries réutilisées
-    towPost:  new THREE.CylinderGeometry(0.18,0.22,1,6),   // pilier h=1, scalé en Y
-    towBeam:  new THREE.BoxGeometry(1,0.18,0.18),           // poutre h=1, scalé en X
-    towPlank: new THREE.BoxGeometry(1,0.12,0.5),            // planche plancher
-    towRail:  new THREE.BoxGeometry(1,0.1,0.1),             // garde-corps horizontal
-    towPost2: new THREE.CylinderGeometry(0.06,0.06,1,5),   // barreau garde-corps
-    towStep:  new THREE.BoxGeometry(1.2,0.12,0.35),         // marche d'escalier
-    towRoof:  new THREE.ConeGeometry(4.5,3,8),              // toit
+    // Tour — unités de base scalées
+    towLogV:  new THREE.CylinderGeometry(0.55,0.65,1,9),  // tronc vertical, scale Y
+    towLogH:  new THREE.CylinderGeometry(0.16,0.16,1,7),  // poutre ronde, scale X ou Z
+    towPlank: new THREE.BoxGeometry(1,0.18,0.65),          // planche/marche, scale X
+    towRailH: new THREE.CylinderGeometry(0.07,0.07,1,5),  // rail horiz, scale X
+    towBarV:  new THREE.CylinderGeometry(0.05,0.05,1.15,5), // barreau vertical
 };
 
-/* ───────────────────────────────────────────────────────
-   GLOBAUX
-─────────────────────────────────────────────────────── */
+/* ─── GLOBAUX ────────────────────────────────────────── */
 const windObjects=[], fireflyData=[], globalColliders=[];
 
-/* ───────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
    TOUR D'OBSERVATION
-   Hauteur plateforme : TOWER_H (au-dessus du sol)
-   4 piliers, escalier colimaçon, plateforme, garde-corps, toit
-─────────────────────────────────────────────────────── */
-const TOWER_H = 38;   // hauteur plateforme (dépasse les arbres ~28-46u)
-const TOWER_R = 3.5;  // demi-largeur de la plateforme
+   - 4 gros piliers en troncs (rayon ~0.55-0.65), aspect bois brut
+   - Renforts en logs ronds horizontaux
+   - Escalier zigzag sur face Z- (8 volées de 8 marches)
+   - Plateforme 5×5u à TOWER_H, plancher en planches
+   - Garde-corps 3 côtés + ouverture côté escalier
+   - Toit conique
+───────────────────────────────────────────────────────── */
+const TOWER_H  = 40;  // hauteur plancher plateforme
+const PLT_HALF = 2.6; // demi-largeur plateforme (~5.2u)
 
-function buildTower(wx, wz, grp, lc) {
-    const gy = findY(wx, wz);
-    const tg = new THREE.Group();
-
-    // ── 4 PILIERS PRINCIPAUX ──
-    const pillarH = TOWER_H + 4;
-    const pillarOffsets = [[-TOWER_R,-TOWER_R],[TOWER_R,-TOWER_R],[TOWER_R,TOWER_R],[-TOWER_R,TOWER_R]];
-    for(const [ox,oz] of pillarOffsets) {
-        const p = new THREE.Mesh(GEO.towPost, MAT.towPost);
-        p.scale.set(1, pillarH, 1);
-        p.position.set(ox, pillarH/2 - 2, oz);
-        p.castShadow = true;
-        tg.add(p);
-    }
-
-    // ── CROIX DE RENFORT tous les 8u ──
-    for(let y=6; y<TOWER_H-2; y+=8) {
-        // X-axis beams
-        for(const oz of [-TOWER_R, TOWER_R]) {
-            const b = new THREE.Mesh(GEO.towBeam, MAT.towPost);
-            b.scale.set(TOWER_R*2, 1, 1);
-            b.position.set(0, y, oz);
-            tg.add(b);
-        }
-        // Z-axis beams
-        for(const ox of [-TOWER_R, TOWER_R]) {
-            const b = new THREE.Mesh(GEO.towBeam, MAT.towPost);
-            b.rotation.y = Math.PI/2;
-            b.scale.set(TOWER_R*2, 1, 1);
-            b.position.set(ox, y, 0);
-            tg.add(b);
+// Fréquence : une tour par cellule 5×5 de chunks = ~400u
+// Spawn : (22,22) dans chunk (0,0)
+function chunkHasTower(cx,cz){
+    if(cx===0&&cz===0) return true;
+    // Cellule 5×5
+    const cellX=Math.floor(cx/5), cellZ=Math.floor(cz/5);
+    if(cellX===0&&cellZ===0) return false; // cellule spawn déjà gérée
+    // Hash du chunk courant
+    let h=(cx*374761393+cz*668265263)^0xdeadbeef;
+    h=Math.imul(h^(h>>>16),0x45d9f3b); h^=h>>>16;
+    const val=(h>>>0)/0xffffffff;
+    // Vrai seulement si ce chunk a le hash max dans sa cellule 5×5
+    for(let dx=-4;dx<=4;dx++){
+        for(let dz=-4;dz<=4;dz++){
+            if(dx===0&&dz===0) continue;
+            const nx=cx+dx,nz=cz+dz;
+            if(Math.floor(nx/5)!==cellX||Math.floor(nz/5)!==cellZ) continue;
+            let h2=(nx*374761393+nz*668265263)^0xdeadbeef;
+            h2=Math.imul(h2^(h2>>>16),0x45d9f3b); h2^=h2>>>16;
+            if((h2>>>0)/0xffffffff>val) return false;
         }
     }
-
-    // ── PLANCHER DE LA PLATEFORME ──
-    const floorW = TOWER_R*2 + 0.3;
-    const nPlanks = Math.ceil(floorW / 0.55);
-    for(let i=0; i<nPlanks; i++) {
-        const pl = new THREE.Mesh(GEO.towPlank, MAT.towFloor);
-        pl.scale.set(floorW/1, 1, 1);
-        pl.position.set(0, TOWER_H, -TOWER_R + i * (floorW/nPlanks) + floorW/nPlanks/2 - 0.1);
-        pl.receiveShadow = true;
-        tg.add(pl);
-    }
-
-    // ── GARDE-CORPS ──
-    const railH = TOWER_H + 1.1;
-    const railY2 = TOWER_H + 0.55;
-    const sides = [
-        {pos:[0, 0, -TOWER_R-0.15], rot:0, len:floorW+0.3},
-        {pos:[0, 0,  TOWER_R+0.15], rot:0, len:floorW+0.3},
-        {pos:[-TOWER_R-0.15, 0, 0], rot:Math.PI/2, len:floorW+0.3},
-        {pos:[ TOWER_R+0.15, 0, 0], rot:Math.PI/2, len:floorW+0.3},
-    ];
-    for(const s of sides) {
-        for(const dy of [railY2, railH]) {
-            const r = new THREE.Mesh(GEO.towRail, MAT.towRail);
-            r.scale.set(s.len, 1, 1);
-            r.rotation.y = s.rot;
-            r.position.set(s.pos[0], dy, s.pos[2]);
-            tg.add(r);
-        }
-        // barreaux
-        const n = Math.ceil(s.len / 0.7);
-        for(let i=0; i<=n; i++) {
-            const bar = new THREE.Mesh(GEO.towPost2, MAT.towRail);
-            bar.scale.set(1, 1.2, 1);
-            const t = (i/n - 0.5) * s.len;
-            const bx = s.rot===0 ? t : s.pos[0];
-            const bz = s.rot===0 ? s.pos[2] : t;
-            bar.position.set(bx, TOWER_H + 0.7, bz);
-            tg.add(bar);
-        }
-    }
-
-    // ── ESCALIER EN COLIMAÇON ──
-    const STEPS = 52;
-    const stepR = TOWER_R + 0.6;   // rayon de rotation autour du centre
-    for(let i=0; i<STEPS; i++) {
-        const frac = i / STEPS;
-        const angle = frac * Math.PI * 3.5 - Math.PI*0.5; // ~1.75 tours
-        const sy = frac * (TOWER_H - 0.5) + 0.3;
-        const sx = Math.cos(angle) * stepR;
-        const sz = Math.sin(angle) * stepR;
-        const step = new THREE.Mesh(GEO.towStep, MAT.towStair);
-        step.rotation.y = -angle;
-        step.position.set(sx, sy, sz);
-        step.castShadow = true;
-        tg.add(step);
-
-        // collider marche (cylindre fin)
-        lc.push({type:'cylinder', x:wx+sx, y:gy+sy-0.1, z:wz+sz, r:0.7, h:0.25});
-    }
-
-    // ── TOIT ──
-    const roof = new THREE.Mesh(GEO.towRoof, MAT.towRoof);
-    roof.position.set(0, TOWER_H + 1.1 + 1.5, 0);
-    roof.castShadow = true;
-    tg.add(roof);
-
-    tg.position.set(wx, gy, wz);
-    grp.add(tg);
-
-    // Collider plateforme (dalle épaisse)
-    lc.push({
-        type:'cylinder',
-        x:wx, y:gy+TOWER_H-0.2, z:wz,
-        r:TOWER_R+0.5, h:0.5
-    });
-    // Colliders piliers
-    for(const [ox,oz] of pillarOffsets) {
-        lc.push({type:'cylinder', x:wx+ox, y:gy, z:wz+oz, r:0.5, h:pillarH});
-    }
-
-    return { wx, wz, clearR: TOWER_R + 2 };
+    return true;
 }
 
-/* ───────────────────────────────────────────────────────
-   CHAMPIGNONS
-─────────────────────────────────────────────────────── */
-function buildMushroom(wx,wz,gy,r,grp) {
-    const sc=0.12+r()*0.25, sH=0.45*sc, cR=0.5*sc;
-    const sm=new THREE.Mesh(GEO.mushStem, MAT.mushStem);
+function buildTower(wx,wz,grp,lc){
+    const gy=findY(wx,wz);
+    const tg=new THREE.Group();
+
+    const pillarH=TOWER_H+4; // enfoncé 4u dans le sol
+    // ── 4 PILIERS EN TRONCS ──────────────────────────────
+    // Positions et rayons légèrement différents pour aspect naturel
+    const pDef=[
+        {ox:-PLT_HALF,oz:-PLT_HALF,rb:0.65,rt:0.55},
+        {ox: PLT_HALF,oz:-PLT_HALF,rb:0.62,rt:0.52},
+        {ox: PLT_HALF,oz: PLT_HALF,rb:0.68,rt:0.58},
+        {ox:-PLT_HALF,oz: PLT_HALF,rb:0.60,rt:0.50},
+    ];
+    for(const p of pDef){
+        const mesh=new THREE.Mesh(new THREE.CylinderGeometry(p.rt,p.rb,pillarH,10),MAT.towLog);
+        mesh.position.set(p.ox,pillarH/2-4,p.oz);
+        mesh.castShadow=true; tg.add(mesh);
+    }
+
+    // ── RENFORTS HORIZONTAUX (logs ronds) ────────────────
+    const beamLen=PLT_HALF*2+0.5;
+    for(let y=6;y<TOWER_H-2;y+=7){
+        // côtés Z- et Z+ (rotation Z pour horizontal selon X)
+        for(const oz of [-PLT_HALF,PLT_HALF]){
+            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,beamLen,7),MAT.towLog);
+            b.rotation.z=Math.PI/2; b.position.set(0,y,oz); tg.add(b);
+        }
+        // côtés X- et X+ (rotation X pour horizontal selon Z)
+        for(const ox of [-PLT_HALF,PLT_HALF]){
+            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,beamLen,7),MAT.towLog);
+            b.rotation.x=Math.PI/2; b.position.set(ox,y+0.4,0); tg.add(b);
+        }
+    }
+
+    // ── ESCALIER ZIGZAG ──────────────────────────────────
+    // Escalier sur face Z-, montant alternativement gauche→droite puis droite→gauche
+    // 8 volées × 8 marches = 64 marches total sur TOWER_H=40u
+    const N_FLIGHTS=8, STEPS_PER=8;
+    const STAIR_W=PLT_HALF*2;   // largeur d'une volée = largeur de la tour
+    const STEP_W=STAIR_W/STEPS_PER; // largeur d'une marche
+    const STEP_H=TOWER_H/(N_FLIGHTS*STEPS_PER); // hauteur par marche ~0.625u
+    const STAIR_Z=-PLT_HALF-0.9; // Z de l'escalier (juste devant face Z-)
+
+    // Deux montants verticaux de soutien escalier
+    for(const sx of [-PLT_HALF+0.2,PLT_HALF-0.2]){
+        const sp=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.16,TOWER_H+1,8),MAT.towLog);
+        sp.position.set(sx,TOWER_H/2-0.5,STAIR_Z-0.1); sp.castShadow=true; tg.add(sp);
+    }
+
+    for(let f=0;f<N_FLIGHTS;f++){
+        const dir=(f%2===0)?1:-1; // alterne direction
+        const flightBaseY=f*(STEPS_PER*STEP_H);
+        for(let s=0;s<STEPS_PER;s++){
+            const stepY=flightBaseY+s*STEP_H;
+            const frac=s/STEPS_PER;
+            // Position X : couvre de -PLT_HALF à +PLT_HALF selon direction
+            const stepX=dir*((frac+0.5/STEPS_PER)-0.5)*STAIR_W;
+            const step=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
+            step.scale.set(STEP_W/1,1,1);
+            step.position.set(stepX,stepY,STAIR_Z);
+            step.castShadow=true; tg.add(step);
+            // Collider marche
+            lc.push({type:'cylinder',x:wx+stepX,y:gy+stepY-0.05,z:wz+STAIR_Z,r:STEP_W*0.55,h:0.25});
+        }
+        // Palier de changement de direction (planche large)
+        if(f<N_FLIGHTS-1){
+            const palY=flightBaseY+STEPS_PER*STEP_H;
+            const palX=dir*(PLT_HALF-STEP_W*0.5);
+            const pal=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
+            pal.scale.set(STEP_W*1.5,1,1.4);
+            pal.position.set(palX,palY,STAIR_Z);
+            tg.add(pal);
+            lc.push({type:'cylinder',x:wx+palX,y:gy+palY-0.05,z:wz+STAIR_Z,r:STEP_W,h:0.28});
+        }
+    }
+
+    // Rampe garde-corps escalier (2 poteaux verticaux aux extrémités + une barre)
+    for(const sx of [-PLT_HALF+0.05,PLT_HALF-0.05]){
+        const ramp=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,TOWER_H,5),MAT.towRail);
+        ramp.position.set(sx,TOWER_H/2,STAIR_Z-0.35); tg.add(ramp);
+    }
+
+    // ── PLANCHER PLATEFORME ───────────────────────────────
+    const floorW=PLT_HALF*2+0.15;
+    const nPlanks=9;
+    for(let i=0;i<nPlanks;i++){
+        const t=i/(nPlanks-1);
+        const pz=-PLT_HALF+t*PLT_HALF*2;
+        const pl=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
+        pl.scale.set(floorW,1,1); pl.position.set(0,TOWER_H,pz);
+        pl.receiveShadow=true; tg.add(pl);
+    }
+    // Collider unique pour toute la plateforme
+    lc.push({type:'cylinder',x:wx,y:gy+TOWER_H-0.1,z:wz,r:PLT_HALF+0.5,h:0.4});
+
+    // Poutres de soutien plancher (sous la plateforme)
+    for(const oz of [-PLT_HALF*0.5,PLT_HALF*0.5]){
+        const sb=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,floorW+0.3,7),MAT.towLog);
+        sb.rotation.z=Math.PI/2; sb.position.set(0,TOWER_H-0.28,oz); tg.add(sb);
+    }
+
+    // ── GARDE-CORPS (Z+, X-, X+ — ouvert côté Z- = escalier) ─
+    const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
+    // Définition : [cx, cz, rotY, len]
+    const gcSides=[
+        [0, PLT_HALF+0.1, 0, floorW],   // face Z+
+        [-PLT_HALF-0.1, 0, Math.PI/2, floorW], // face X-
+        [ PLT_HALF+0.1, 0, Math.PI/2, floorW], // face X+
+    ];
+    for(const [cx,cz,ry,len] of gcSides){
+        // Rails haut et mi
+        for(const rh of [railMid,railTop]){
+            const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
+            r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
+        }
+        // Barreaux verticaux
+        const nb=Math.ceil(len/0.62)+1;
+        for(let i=0;i<=nb;i++){
+            const t=(i/nb-0.5)*len;
+            const bx=ry===0?cx+t:cx, bz=ry===0?cz:cz+t;
+            const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
+            bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
+        }
+    }
+    // Demi-rails côté Z- (juste aux deux extrémités pour fermer les angles)
+    for(const sx of [-PLT_HALF,PLT_HALF]){
+        const halfLen=PLT_HALF*0.55;
+        for(const rh of [railMid,railTop]){
+            const r=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,halfLen,5),MAT.towRail);
+            r.rotation.set(0,0,Math.PI/2); r.position.set(sx,rh,-PLT_HALF+halfLen/2-0.1); tg.add(r);
+        }
+    }
+    // Poteaux d'angle garde-corps
+    for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
+        const p=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,railTop-TOWER_H+0.1,6),MAT.towRail);
+        p.position.set(px,TOWER_H+(railTop-TOWER_H)/2,pz); tg.add(p);
+    }
+
+    // ── TOIT ─────────────────────────────────────────────
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(PLT_HALF+0.9,3.8,8),MAT.towLog);
+    roof.position.set(0,railTop+2,0); roof.castShadow=true; tg.add(roof);
+
+    tg.position.set(wx,gy,wz);
+    grp.add(tg);
+    return {wx,wz,clearR:PLT_HALF+6};
+}
+
+/* ─── CHAMPIGNONS ────────────────────────────────────── */
+function buildMushroom(wx,wz,gy,r,grp){
+    const sc=0.12+r()*0.25,sH=0.45*sc,cR=0.5*sc;
+    const sm=new THREE.Mesh(GEO.mushStem,MAT.mushStem);
     sm.scale.set(cR*0.6,sH*2.5,cR*0.6); sm.position.set(wx,gy+sH*0.5,wz); grp.add(sm);
-    const cm=new THREE.Mesh(GEO.mushCap, r()>0.3?MAT.mushCap:MAT.mushCap2);
+    const cm=new THREE.Mesh(GEO.mushCap,r()>0.3?MAT.mushCap:MAT.mushCap2);
     cm.scale.setScalar(cR*2); cm.position.set(wx,gy+sH+cR*0.05,wz); grp.add(cm);
     for(let s=0,n=3+(r()*3|0);s<n;s++){
-        const ang=r()*Math.PI*2, rad=cR*(0.2+r()*0.55);
-        const spot=new THREE.Mesh(GEO.mushSpot, MAT.mushSpot);
+        const ang=r()*Math.PI*2,rad=cR*(0.2+r()*0.55);
+        const spot=new THREE.Mesh(GEO.mushSpot,MAT.mushSpot);
         spot.scale.setScalar(cR*0.18);
-        spot.position.set(wx+Math.cos(ang)*rad, gy+sH+Math.sqrt(Math.max(0,cR*cR-rad*rad))*0.9, wz+Math.sin(ang)*rad);
+        spot.position.set(wx+Math.cos(ang)*rad,gy+sH+Math.sqrt(Math.max(0,cR*cR-rad*rad))*0.9,wz+Math.sin(ang)*rad);
         grp.add(spot);
     }
 }
 
-/* ───────────────────────────────────────────────────────
-   CHUNKS
-─────────────────────────────────────────────────────── */
+/* ─── CHUNKS ─────────────────────────────────────────── */
 const CHUNK_SIZE=80, CHUNK_SEGS=14, CHUNK_RADIUS=2;
 const loadedChunks=new Map(), chunkFadeIn=new Map();
-
-function seededRng(seed) {
+function seededRng(seed){
     let s=(seed^0xdeadbeef)|0;
     return ()=>{ s=Math.imul(s^(s>>>16),0x45d9f3b); s=Math.imul(s^(s>>>16),0x45d9f3b); s^=s>>>16; return (s>>>0)/0xffffffff; };
 }
 
-function generateChunk(cx,cz) {
+function generateChunk(cx,cz){
     const key=cx+','+cz;
     if(loadedChunks.has(key)) return;
     loadedChunks.set(key,null);
     requestAnimationFrame(()=>_buildChunk(cx,cz,key));
 }
 
-function _buildChunk(cx,cz,key) {
+function _buildChunk(cx,cz,key){
     if(!loadedChunks.has(key)) return;
-    const oX=cx*CHUNK_SIZE, oZ=cz*CHUNK_SIZE;
+    const oX=cx*CHUNK_SIZE,oZ=cz*CHUNK_SIZE;
     const r=seededRng(cx*73856093^cz*19349663);
-    const grp=new THREE.Group(), lc=[];
+    const grp=new THREE.Group(),lc=[];
 
     /* SOL */
     const tgeo=new THREE.PlaneGeometry(CHUNK_SIZE,CHUNK_SIZE,CHUNK_SEGS,CHUNK_SEGS);
     const vp=tgeo.attributes.position.array;
-    for(let i=0;i<vp.length;i+=3) vp[i+2]=fbm(oX+vp[i], oZ-vp[i+1]);
+    for(let i=0;i<vp.length;i+=3) vp[i+2]=fbm(oX+vp[i],oZ-vp[i+1]);
     tgeo.computeVertexNormals();
     const terr=new THREE.Mesh(tgeo,MAT.ground);
     terr.rotation.x=-Math.PI/2; terr.position.set(oX,0,oZ); terr.receiveShadow=true;
     grp.add(terr);
 
-    /* ── TOUR D'OBSERVATION ──
-       - Chunk (0,0) : toujours au spawn (légèrement décalée pour ne pas bloquer le départ)
-       - Autres chunks : 20% de chance, position aléatoire dans le chunk
-    */
-    const isSpawnChunk = (cx===0 && cz===0);
-    const hasTower = isSpawnChunk || (r() < 0.20);
-    let towerInfo = null; // {wx, wz, clearR}
-
-    if(hasTower) {
-        let twx, twz;
-        if(isSpawnChunk) {
-            twx = 18; twz = 18; // décalé du spawn pour laisser de l'espace
-        } else {
-            twx = oX + (r()-0.5)*CHUNK_SIZE*0.6;
-            twz = oZ + (r()-0.5)*CHUNK_SIZE*0.6;
+    /* TOUR */
+    let towerInfo=null;
+    if(chunkHasTower(cx,cz)){
+        let twx,twz;
+        if(cx===0&&cz===0){ twx=22; twz=22; }
+        else {
+            const rng2=seededRng(cx*19349663^cz*73856093);
+            twx=oX+(rng2()-0.5)*CHUNK_SIZE*0.5;
+            twz=oZ+(rng2()-0.5)*CHUNK_SIZE*0.5;
         }
-        towerInfo = buildTower(twx, twz, grp, lc);
+        towerInfo=buildTower(twx,twz,grp,lc);
     }
 
-    /* POINTS OCCUPÉS — empêche les overlaps */
-    const occupied = [];
-    if(towerInfo) occupied.push({x:towerInfo.wx, z:towerInfo.wz, r:towerInfo.clearR + 6});
-
-    function canPlace(wx, wz, minDist) {
-        return !occupied.some(o => {
-            const dx=wx-o.x, dz=wz-o.z;
-            return dx*dx+dz*dz < (minDist+o.r)*(minDist+o.r);
-        });
+    /* POINTS OCCUPÉS */
+    const occupied=[];
+    if(towerInfo) occupied.push({x:towerInfo.wx,z:towerInfo.wz,r:towerInfo.clearR+5});
+    function canPlace(wx,wz,minDist){
+        return !occupied.some(o=>{ const dx=wx-o.x,dz=wz-o.z; return dx*dx+dz*dz<(minDist+o.r)*(minDist+o.r); });
     }
-    function occupy(wx, wz, rad) { occupied.push({x:wx, z:wz, r:rad}); }
+    function occupy(wx,wz,rad){ occupied.push({x:wx,z:wz,r:rad}); }
 
     /* ARBRES */
-    const treeN=7+(r()*7|0), tpts=[];
+    const treeN=7+(r()*7|0),tpts=[];
     for(let i=0;i<treeN;i++){
         let wx,wz,ok=false,tries=0;
         do{
-            wx=oX+(r()-0.5)*CHUNK_SIZE*0.85;
-            wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
-            ok = canPlace(wx,wz,8) && !tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});
-        } while(!ok && ++tries<20);
+            wx=oX+(r()-0.5)*CHUNK_SIZE*0.85; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
+            ok=canPlace(wx,wz,8)&&!tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});
+        } while(!ok&&++tries<20);
         if(tries>=20) continue;
-        tpts.push([wx,wz]);
-        occupy(wx, wz, 8);
+        tpts.push([wx,wz]); occupy(wx,wz,8);
         const gy=findY(wx,wz),h=28+r()*18,tr=1.4+r()*1.0,trunkH=h*(0.28+r()*0.08),tgr=new THREE.Group();
         const trunk=new THREE.Mesh(new THREE.CylinderGeometry(tr*0.55,tr*1.4,trunkH+6,9),MAT.trunk);
         trunk.position.y=trunkH/2-3; trunk.castShadow=true; tgr.add(trunk);
@@ -513,52 +510,49 @@ function _buildChunk(cx,cz,key) {
     /* ROCHERS */
     for(let i=0,n=1+(r()*3|0);i<n;i++){
         let wx,wz,tries=0;
-        do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
+        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
         if(tries>=15) continue;
-        const gy=findY(wx,wz);
-        const sx=1.0+r()*2.6, sy=sx*(0.5+r()*0.5), sz=1.0+r()*2.6;
+        const gy=findY(wx,wz),sx=1.0+r()*2.6,sy=sx*(0.5+r()*0.5),sz=1.0+r()*2.6;
         const rock=new THREE.Mesh(GEO.rock,MAT.rock);
-        rock.scale.set(sx,sy,sz);
-        rock.rotation.set((r()-0.5)*0.4, r()*Math.PI*2, (r()-0.5)*0.4);
-        rock.position.set(wx, gy+sy*0.35, wz);
+        rock.scale.set(sx,sy,sz); rock.rotation.set((r()-0.5)*0.4,r()*Math.PI*2,(r()-0.5)*0.4);
+        rock.position.set(wx,gy+sy*0.35,wz);
         rock.castShadow=rock.receiveShadow=true; grp.add(rock);
         lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
-        occupy(wx, wz, Math.max(sx,sz)*1.2);
+        occupy(wx,wz,Math.max(sx,sz)*1.2);
     }
 
     /* FLEURS */
     for(let i=0,n=25+(r()*50|0);i<n;i++){
         let wx,wz,tries=0;
-        do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
+        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
         if(tries>=10) continue;
         const gy=findY(wx,wz);
         const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
         const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
         hd.position.set(wx,gy+0.65,wz); grp.add(hd);
-        occupy(wx, wz, 0.8);
+        occupy(wx,wz,0.8);
     }
 
     /* CHAMPIGNONS */
     for(let i=0,n=1+(r()*4|0);i<n;i++){
         let wx,wz,tries=0;
-        do { wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
+        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
         if(tries>=15) continue;
-        buildMushroom(wx,wz,findY(wx,wz),r,grp);
-        occupy(wx, wz, 1.5);
+        buildMushroom(wx,wz,findY(wx,wz),r,grp); occupy(wx,wz,1.5);
         if(r()>0.5) for(let c=0,cn=2+(r()*3|0);c<cn;c++){
-            const ox=wx+(r()-0.5)*2.5, oz=wz+(r()-0.5)*2.5;
-            if(canPlace(ox,oz,1)) { buildMushroom(ox,oz,findY(ox,oz),r,grp); occupy(ox,oz,1); }
+            const ox=wx+(r()-0.5)*2.5,oz=wz+(r()-0.5)*2.5;
+            if(canPlace(ox,oz,1)){ buildMushroom(ox,oz,findY(ox,oz),r,grp); occupy(ox,oz,1); }
         }
     }
 
-    /* HERBE instanciée */
+    /* HERBE */
     const gn=50+(r()*50|0);
     const gm=new THREE.InstancedMesh(GEO.grass,MAT.grass,gn);
     gm.frustumCulled=false;
     const dm=new THREE.Object3D();
     for(let i=0;i<gn;i++){
-        const wx=oX+(r()-0.5)*CHUNK_SIZE, wz=oZ+(r()-0.5)*CHUNK_SIZE;
-        dm.position.set(wx, findY(wx,wz), wz);
+        const wx=oX+(r()-0.5)*CHUNK_SIZE,wz=oZ+(r()-0.5)*CHUNK_SIZE;
+        dm.position.set(wx,findY(wx,wz),wz);
         dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
         gm.setMatrixAt(i,dm.matrix);
     }
@@ -566,7 +560,7 @@ function _buildChunk(cx,cz,key) {
 
     /* LUCIOLES */
     for(let i=0,n=2+(r()*6|0);i<n;i++){
-        const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88, wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
+        const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88,wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
         const fy=findY(wx,wz)+2+r()*4;
         const m=new THREE.Mesh(GEO.ff,MAT.ff); m.position.set(wx,fy,wz); grp.add(m);
         fireflyData.push({mesh:m,baseY:fy,phase:r()*10,ox:wx,oz:wz});
@@ -576,7 +570,7 @@ function _buildChunk(cx,cz,key) {
     grp.traverse(obj=>{
         if(!obj.isMesh) return;
         const mats=Array.isArray(obj.material)?obj.material:[obj.material];
-        const cl=mats.map(m=>{const c=m.clone();c._bOp=c.opacity??1;c.transparent=true;c.opacity=0;return c;});
+        const cl=mats.map(m=>{ const c=m.clone(); c._bOp=c.opacity??1; c.transparent=true; c.opacity=0; return c; });
         obj.material=Array.isArray(obj.material)?cl:cl[0];
     });
 
@@ -586,28 +580,28 @@ function _buildChunk(cx,cz,key) {
     chunkFadeIn.set(key,{group:grp,alpha:0});
 }
 
-function unloadChunk(cx,cz) {
-    const key=cx+','+cz, data=loadedChunks.get(key);
+function unloadChunk(cx,cz){
+    const key=cx+','+cz,data=loadedChunks.get(key);
     if(!data){loadedChunks.delete(key);return;}
     scene.remove(data.group);
     data.group.traverse(obj=>{
         if(!obj.isMesh) return;
         const sharedGeos=Object.values(GEO);
-        if(obj.geometry && !sharedGeos.includes(obj.geometry)) obj.geometry.dispose();
+        if(obj.geometry&&!sharedGeos.includes(obj.geometry)) obj.geometry.dispose();
         const mats=Array.isArray(obj.material)?obj.material:[obj.material];
-        mats.forEach(m=>{if(m._bOp!==undefined) m.dispose();});
+        mats.forEach(m=>{ if(m._bOp!==undefined) m.dispose(); });
     });
-    for(const c of data.localColliders){const idx=globalColliders.indexOf(c);if(idx!==-1)globalColliders.splice(idx,1);}
+    for(const c of data.localColliders){ const idx=globalColliders.indexOf(c); if(idx!==-1)globalColliders.splice(idx,1); }
     data.group.traverse(obj=>{
         const fi=fireflyData.findIndex(f=>f.mesh===obj); if(fi!==-1)fireflyData.splice(fi,1);
-        const wi=windObjects.findIndex(w=>w.mesh===obj);  if(wi!==-1)windObjects.splice(wi,1);
+        const wi=windObjects.findIndex(w=>w.mesh===obj); if(wi!==-1)windObjects.splice(wi,1);
     });
     loadedChunks.delete(key); chunkFadeIn.delete(key);
 }
 
-let lastCX=Infinity, lastCZ=Infinity;
-function updateChunks(px,pz) {
-    const cx=Math.round(px/CHUNK_SIZE), cz=Math.round(pz/CHUNK_SIZE);
+let lastCX=Infinity,lastCZ=Infinity;
+function updateChunks(px,pz){
+    const cx=Math.round(px/CHUNK_SIZE),cz=Math.round(pz/CHUNK_SIZE);
     if(cx===lastCX&&cz===lastCZ) return;
     lastCX=cx; lastCZ=cz;
     for(let dx=-CHUNK_RADIUS;dx<=CHUNK_RADIUS;dx++)
@@ -619,10 +613,8 @@ function updateChunks(px,pz) {
     }
 }
 
-/* ───────────────────────────────────────────────────────
-   PHYSIQUE
-─────────────────────────────────────────────────────── */
-const PLAYER_R=0.4, PLAYER_H=1.8;
+/* ─── PHYSIQUE ───────────────────────────────────────── */
+const PLAYER_R=0.4,PLAYER_H=1.8;
 function resolveColliders(nx,ny,nz){
     let onTop=false;
     for(const c of globalColliders){
@@ -643,40 +635,33 @@ function resolveColliders(nx,ny,nz){
     return{x:nx,y:ny,z:nz,onTop};
 }
 
-/* ───────────────────────────────────────────────────────
-   CONTROLS
-─────────────────────────────────────────────────────── */
+/* ─── CONTROLS ───────────────────────────────────────── */
 const controls=new PointerLockControls(camera,document.body);
 document.body.addEventListener('click',()=>controls.lock());
-
-const velocity=new THREE.Vector3(), keys={z:false,s:false,q:false,d:false,shift:false};
-let jumpVel=0, grounded=true, smoothGroundY=null;
-
+const velocity=new THREE.Vector3(),keys={z:false,s:false,q:false,d:false,shift:false};
+let jumpVel=0,grounded=true,smoothGroundY=null;
 addEventListener('keydown',e=>{
-    const k=e.key.toLowerCase();
-    if(k in keys)keys[k]=true;
+    const k=e.key.toLowerCase(); if(k in keys)keys[k]=true;
     if(e.shiftKey)keys.shift=true;
     if(e.code==='Space'&&grounded){grounded=false;jumpVel=0.32;}
 });
 addEventListener('keyup',e=>{
-    const k=e.key.toLowerCase();
-    if(k in keys)keys[k]=false;
+    const k=e.key.toLowerCase(); if(k in keys)keys[k]=false;
     if(!e.shiftKey)keys.shift=false;
 });
-
-const _fwd=new THREE.Vector3(), _right=new THREE.Vector3();
+const _fwd=new THREE.Vector3(),_right=new THREE.Vector3();
 function updateMovement(dt){
     const run=keys.shift&&(keys.z||keys.s||keys.q||keys.d);
     _fwd.set(0,0,-1).applyQuaternion(camera.quaternion); _fwd.y=0; _fwd.normalize();
     _right.set(1,0,0).applyQuaternion(camera.quaternion); _right.y=0; _right.normalize();
     const slope=1-Math.abs(terrainNormal(camera.position.x,camera.position.z).y);
     const accel=(run?0.065:0.032)*(1-slope*0.5);
-    if(keys.z)velocity.addScaledVector(_fwd,  accel);
-    if(keys.s)velocity.addScaledVector(_fwd, -accel);
+    if(keys.z)velocity.addScaledVector(_fwd,accel);
+    if(keys.s)velocity.addScaledVector(_fwd,-accel);
     if(keys.q)velocity.addScaledVector(_right,-accel);
-    if(keys.d)velocity.addScaledVector(_right, accel);
+    if(keys.d)velocity.addScaledVector(_right,accel);
     velocity.multiplyScalar(0.88);
-    let nx=camera.position.x+velocity.x, ny=camera.position.y, nz=camera.position.z+velocity.z;
+    let nx=camera.position.x+velocity.x,ny=camera.position.y,nz=camera.position.z+velocity.z;
     jumpVel=Math.max(jumpVel-0.016,-1.2); ny+=jumpVel;
     const res=resolveColliders(nx,ny,nz); nx=res.x; ny=res.y; nz=res.z;
     const tgy=findY(nx,nz)+PLAYER_H;
@@ -694,24 +679,19 @@ function updateMovement(dt){
     camera.position.set(nx,ny,nz);
 }
 
-/* ───────────────────────────────────────────────────────
-   BOUCLE
-─────────────────────────────────────────────────────── */
+/* ─── BOUCLE ─────────────────────────────────────────── */
 const clock=new THREE.Clock();
 let elapsed=DAY_DURATION*0.25;
 updateChunks(0,0);
-
 function animate(){
     requestAnimationFrame(animate);
     const dt=Math.min(clock.getDelta(),0.05);
     elapsed+=dt;
-
     for(const w of windObjects) w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
     for(const f of fireflyData){
         f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5;
         f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008;
     }
-
     for(const[key,fd]of chunkFadeIn){
         fd.alpha=Math.min(1,fd.alpha+dt*1.5);
         fd.group.traverse(obj=>{
@@ -728,7 +708,6 @@ function animate(){
             chunkFadeIn.delete(key);
         }
     }
-
     updateDayNight(elapsed);
     if(controls.isLocked) updateMovement(dt);
     updateChunks(camera.position.x,camera.position.z);
