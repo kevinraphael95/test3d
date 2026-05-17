@@ -273,9 +273,9 @@ function buildTower(wx,wz,grp,lc){
     const gy=findY(wx,wz);
     const tg=new THREE.Group();
 
-    const pillarH=TOWER_H+4; // enfoncé 4u dans le sol
-    // ── 4 PILIERS EN TRONCS ──────────────────────────────
-    // Positions et rayons légèrement différents pour aspect naturel
+    const pillarH=TOWER_H+4;
+
+    // ── 4 PILIERS ────────────────────────────────────────
     const pDef=[
         {ox:-PLT_HALF,oz:-PLT_HALF,rb:0.65,rt:0.55},
         {ox: PLT_HALF,oz:-PLT_HALF,rb:0.62,rt:0.52},
@@ -286,69 +286,58 @@ function buildTower(wx,wz,grp,lc){
         const mesh=new THREE.Mesh(new THREE.CylinderGeometry(p.rt,p.rb,pillarH,10),MAT.towLog);
         mesh.position.set(p.ox,pillarH/2-4,p.oz);
         mesh.castShadow=true; tg.add(mesh);
+        // Collision pilier
+        lc.push({type:'cylinder',x:wx+p.ox,y:gy-4,z:wz+p.oz,r:p.rb+0.1,h:pillarH});
     }
 
-    // ── RENFORTS HORIZONTAUX (logs ronds) ────────────────
+    // ── RENFORTS HORIZONTAUX ─────────────────────────────
     const beamLen=PLT_HALF*2+0.5;
     for(let y=6;y<TOWER_H-2;y+=7){
-        // côtés Z- et Z+ (rotation Z pour horizontal selon X)
         for(const oz of [-PLT_HALF,PLT_HALF]){
             const b=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,beamLen,7),MAT.towLog);
             b.rotation.z=Math.PI/2; b.position.set(0,y,oz); tg.add(b);
         }
-        // côtés X- et X+ (rotation X pour horizontal selon Z)
         for(const ox of [-PLT_HALF,PLT_HALF]){
             const b=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,beamLen,7),MAT.towLog);
             b.rotation.x=Math.PI/2; b.position.set(ox,y+0.4,0); tg.add(b);
         }
     }
 
-    // ── ESCALIER ZIGZAG ──────────────────────────────────
-    // Escalier sur face Z-, montant alternativement gauche→droite puis droite→gauche
-    // 8 volées × 8 marches = 64 marches total sur TOWER_H=40u
-    const N_FLIGHTS=8, STEPS_PER=8;
-    const STAIR_W=PLT_HALF*2;   // largeur d'une volée = largeur de la tour
-    const STEP_W=STAIR_W/STEPS_PER; // largeur d'une marche
-    const STEP_H=TOWER_H/(N_FLIGHTS*STEPS_PER); // hauteur par marche ~0.625u
-    const STAIR_Z=-PLT_HALF-0.9; // Z de l'escalier (juste devant face Z-)
+    // ── ESCALIER ─────────────────────────────────────────
+    // Escalier collé à la face Z- de la tour, montée directe sans zigzag
+    // Marches larges (toute la largeur de la tour) et profondes (0.7u de profondeur)
+    const TOTAL_STEPS = 28;
+    const STEP_H = TOWER_H / TOTAL_STEPS;       // hauteur par marche ~1.43u
+    const STEP_D = 0.75;                          // profondeur de chaque marche
+    const STEP_W = PLT_HALF * 2 + 0.3;           // largeur = largeur tour
+    const STAIR_Z = -PLT_HALF - STEP_D * 0.5;    // Z de la première marche
 
-    // Deux montants verticaux de soutien escalier
-    for(const sx of [-PLT_HALF+0.2,PLT_HALF-0.2]){
+    for(let s=0;s<TOTAL_STEPS;s++){
+        const stepY = s * STEP_H;
+        const stepZ = STAIR_Z - s * STEP_D;      // chaque marche avance en Z-
+
+        const step=new THREE.Mesh(new THREE.BoxGeometry(STEP_W, 0.2, STEP_D), MAT.towPlank);
+        step.position.set(0, stepY, stepZ);
+        step.castShadow=true; tg.add(step);
+        lc.push({type:'cylinder',x:wx,y:gy+stepY-0.05,z:wz+stepZ,r:STEP_W*0.55,h:0.28});
+    }
+
+    // Deux montants verticaux soutien escalier
+    const stairTotalD = STEP_D * TOTAL_STEPS;
+    for(const sx of [-PLT_HALF+0.1, PLT_HALF-0.1]){
         const sp=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.16,TOWER_H+1,8),MAT.towLog);
-        sp.position.set(sx,TOWER_H/2-0.5,STAIR_Z-0.1); sp.castShadow=true; tg.add(sp);
+        sp.position.set(sx, TOWER_H/2-0.5, STAIR_Z - stairTotalD*0.5);
+        sp.castShadow=true; tg.add(sp);
     }
 
-    for(let f=0;f<N_FLIGHTS;f++){
-        const dir=(f%2===0)?1:-1; // alterne direction
-        const flightBaseY=f*(STEPS_PER*STEP_H);
-        for(let s=0;s<STEPS_PER;s++){
-            const stepY=flightBaseY+s*STEP_H;
-            const frac=s/STEPS_PER;
-            // Position X : couvre de -PLT_HALF à +PLT_HALF selon direction
-            const stepX=dir*((frac+0.5/STEPS_PER)-0.5)*STAIR_W;
-            const step=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
-            step.scale.set(STEP_W/1,1,1);
-            step.position.set(stepX,stepY,STAIR_Z);
-            step.castShadow=true; tg.add(step);
-            // Collider marche
-            lc.push({type:'cylinder',x:wx+stepX,y:gy+stepY-0.05,z:wz+STAIR_Z,r:STEP_W*0.55,h:0.25});
-        }
-        // Palier de changement de direction (planche large)
-        if(f<N_FLIGHTS-1){
-            const palY=flightBaseY+STEPS_PER*STEP_H;
-            const palX=dir*(PLT_HALF-STEP_W*0.5);
-            const pal=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
-            pal.scale.set(STEP_W*1.5,1,1.4);
-            pal.position.set(palX,palY,STAIR_Z);
-            tg.add(pal);
-            lc.push({type:'cylinder',x:wx+palX,y:gy+palY-0.05,z:wz+STAIR_Z,r:STEP_W,h:0.28});
-        }
-    }
-
-    // Rampe garde-corps escalier (2 poteaux verticaux aux extrémités + une barre)
-    for(const sx of [-PLT_HALF+0.05,PLT_HALF-0.05]){
-        const ramp=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,TOWER_H,5),MAT.towRail);
-        ramp.position.set(sx,TOWER_H/2,STAIR_Z-0.35); tg.add(ramp);
+    // Rampe garde-corps escalier (2 barres latérales)
+    for(const sx of [-PLT_HALF-0.05, PLT_HALF+0.05]){
+        const rampLen = Math.sqrt(TOWER_H*TOWER_H + stairTotalD*stairTotalD);
+        const ramp=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,rampLen,5),MAT.towRail);
+        const angle = -Math.atan2(TOWER_H, stairTotalD);
+        ramp.rotation.x = angle;
+        ramp.position.set(sx, TOWER_H*0.5, STAIR_Z - stairTotalD*0.5);
+        tg.add(ramp);
     }
 
     // ── PLANCHER PLATEFORME ───────────────────────────────
@@ -361,30 +350,28 @@ function buildTower(wx,wz,grp,lc){
         pl.scale.set(floorW,1,1); pl.position.set(0,TOWER_H,pz);
         pl.receiveShadow=true; tg.add(pl);
     }
-    // Collider unique pour toute la plateforme
+    // Collider plateforme
     lc.push({type:'cylinder',x:wx,y:gy+TOWER_H-0.1,z:wz,r:PLT_HALF+0.5,h:0.4});
 
-    // Poutres de soutien plancher (sous la plateforme)
+    // Poutres soutien plancher
     for(const oz of [-PLT_HALF*0.5,PLT_HALF*0.5]){
         const sb=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,floorW+0.3,7),MAT.towLog);
         sb.rotation.z=Math.PI/2; sb.position.set(0,TOWER_H-0.28,oz); tg.add(sb);
     }
 
-    // ── GARDE-CORPS (Z+, X-, X+ — ouvert côté Z- = escalier) ─
+    // ── GARDE-CORPS ───────────────────────────────────────
     const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
-    // Définition : [cx, cz, rotY, len]
     const gcSides=[
-        [0, PLT_HALF+0.1, 0, floorW],   // face Z+
-        [-PLT_HALF-0.1, 0, Math.PI/2, floorW], // face X-
-        [ PLT_HALF+0.1, 0, Math.PI/2, floorW], // face X+
+        [0,  PLT_HALF+0.1,  0,           floorW],
+        [-PLT_HALF-0.1, 0,  Math.PI/2,   floorW],
+        [ PLT_HALF+0.1, 0,  Math.PI/2,   floorW],
+        [0, -PLT_HALF-0.1,  0,           floorW], // côté escalier fermé aussi
     ];
     for(const [cx,cz,ry,len] of gcSides){
-        // Rails haut et mi
         for(const rh of [railMid,railTop]){
             const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
             r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
         }
-        // Barreaux verticaux
         const nb=Math.ceil(len/0.62)+1;
         for(let i=0;i<=nb;i++){
             const t=(i/nb-0.5)*len;
@@ -392,24 +379,23 @@ function buildTower(wx,wz,grp,lc){
             const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
             bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
         }
+        // Collision garde-corps — mur invisible fin
+        lc.push({type:'cylinder',x:wx+cx,y:gy+TOWER_H,z:wz+cz,r:0.15,h:1.3});
     }
-    // Demi-rails côté Z- (juste aux deux extrémités pour fermer les angles)
-    for(const sx of [-PLT_HALF,PLT_HALF]){
-        const halfLen=PLT_HALF*0.55;
-        for(const rh of [railMid,railTop]){
-            const r=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,halfLen,5),MAT.towRail);
-            r.rotation.set(0,0,Math.PI/2); r.position.set(sx,rh,-PLT_HALF+halfLen/2-0.1); tg.add(r);
-        }
-    }
-    // Poteaux d'angle garde-corps
+
+    // Poteaux d'angle
     for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
         const p=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,railTop-TOWER_H+0.1,6),MAT.towRail);
         p.position.set(px,TOWER_H+(railTop-TOWER_H)/2,pz); tg.add(p);
     }
 
-    // ── TOIT ─────────────────────────────────────────────
-    const roof=new THREE.Mesh(new THREE.ConeGeometry(PLT_HALF+0.9,3.8,8),MAT.towLog);
-    roof.position.set(0,railTop+2,0); roof.castShadow=true; tg.add(roof);
+    // Ouverture escalier — on retire le rail Z- et on met juste 2 demi-rails aux coins
+    // (déjà géré : le gcSides[3] ferme Z-, on peut l'enlever si on veut l'ouverture)
+    // → Pour l'instant tout fermé, plus sûr
+
+    // ── TOIT SURÉLEVÉ ─────────────────────────────────────
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(PLT_HALF+1.2,9,8),MAT.towLog);
+    roof.position.set(0,railTop+5,0); roof.castShadow=true; tg.add(roof);
 
     tg.position.set(wx,gy,wz);
     grp.add(tg);
