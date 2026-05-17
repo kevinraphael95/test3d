@@ -305,67 +305,44 @@ function buildTower(wx,wz,grp,lc){
         }
     }
 
-    // ── RAMPES INCLINÉES — 4 volées, une par face ────────
-    // Chaque volée = une planche inclinée collée à l'extérieur d'une face
-    // La montée se fait en spirale : Z+ → X+ → Z- → X-
-    // Chaque volée monte de TOWER_H/4
+    // ── ÉCHELLE — collée à la face Z+ ────────────────────
+    const LADDER_W    = 1.0;    // largeur entre les deux montants
+    const LADDER_Z    = PLT_HALF + 0.25; // collée à l'extérieur face Z+
+    const RUNG_COUNT  = Math.floor(TOWER_H / 0.9); // un barreau tous les ~0.9u
+    const RUNG_SPACING= TOWER_H / RUNG_COUNT;
 
-    const FLIGHT_H  = TOWER_H / 4;
-    const RAMP_W    = PLT_HALF * 2;       // largeur de la rampe = largeur de la face
-    const RAMP_LEN  = Math.sqrt(FLIGHT_H*FLIGHT_H + RAMP_W*RAMP_W); // longueur hypoténuse
-    const RAMP_ANGLE= Math.atan2(FLIGHT_H, RAMP_W);
-    const RAMP_T    = 0.28;               // épaisseur de la planche
-    const RAMP_OFF  = 0.35;               // distance de la face de la tour
-    const N_COLL    = 6;                  // colliders par rampe
+    // Montant gauche
+    const postL=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09,0.09,TOWER_H+0.5,7),
+        MAT.towLog
+    );
+    postL.position.set(-LADDER_W*0.5, TOWER_H*0.5, LADDER_Z);
+    postL.castShadow=true; tg.add(postL);
+    lc.push({type:'cylinder',x:wx-LADDER_W*0.5,y:gy,z:wz+LADDER_Z,r:0.18,h:TOWER_H+0.5});
 
-    // [baseY, axe, fixedV, dirX, dirZ, rotAxis]
-    // dirX/dirZ : direction de la progression (signe)
-    const flights=[
-        {baseY:FLIGHT_H*0,  fix:'z', fixV: PLT_HALF+RAMP_OFF, dirX: 1, dirZ: 0, rotX: RAMP_ANGLE,  rotZ:0},
-        {baseY:FLIGHT_H*1,  fix:'x', fixV: PLT_HALF+RAMP_OFF, dirX: 0, dirZ:-1, rotX: 0,            rotZ:-RAMP_ANGLE},
-        {baseY:FLIGHT_H*2,  fix:'z', fixV:-PLT_HALF-RAMP_OFF, dirX:-1, dirZ: 0, rotX:-RAMP_ANGLE,  rotZ:0},
-        {baseY:FLIGHT_H*3,  fix:'x', fixV:-PLT_HALF-RAMP_OFF, dirX: 0, dirZ: 1, rotX: 0,            rotZ: RAMP_ANGLE},
-    ];
+    // Montant droit
+    const postR=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09,0.09,TOWER_H+0.5,7),
+        MAT.towLog
+    );
+    postR.position.set(LADDER_W*0.5, TOWER_H*0.5, LADDER_Z);
+    postR.castShadow=true; tg.add(postR);
+    lc.push({type:'cylinder',x:wx+LADDER_W*0.5,y:gy,z:wz+LADDER_Z,r:0.18,h:TOWER_H+0.5});
 
-    for(const fl of flights){
-        const midY  = fl.baseY + FLIGHT_H*0.5;
-        const ramp  = new THREE.Mesh(
-            new THREE.BoxGeometry(
-                fl.fix==='z' ? RAMP_W : RAMP_T,
-                fl.fix==='z' ? RAMP_T : RAMP_W,
-                fl.fix==='z' ? RAMP_T : RAMP_W
-            ),
-            MAT.towPlank
+    // Barreaux
+    for(let i=1;i<=RUNG_COUNT;i++){
+        const ry=i*RUNG_SPACING;
+        const rung=new THREE.Mesh(
+            new THREE.CylinderGeometry(0.05,0.05,LADDER_W,6),
+            MAT.towLog
         );
-
-        // On crée la rampe comme une boite allongée et on la tourne
-        // Géométrie : longueur selon l'axe de progression, épaisseur fine
-        const rampGeo = new THREE.BoxGeometry(RAMP_LEN, RAMP_T, RAMP_W);
-        const rampMesh = new THREE.Mesh(rampGeo, MAT.towPlank);
-
-        if(fl.fix==='z'){
-            // face Z : rampe allongée selon X, inclinée selon X
-            rampMesh.rotation.z = fl.dirX > 0 ? RAMP_ANGLE : -RAMP_ANGLE;
-            rampMesh.position.set(0, midY, fl.fixV);
-        } else {
-            // face X : rampe allongée selon Z, inclinée selon Z
-            rampMesh.rotation.x = fl.dirZ > 0 ? -RAMP_ANGLE : RAMP_ANGLE;
-            rampMesh.position.set(fl.fixV, midY, 0);
-        }
-        rampMesh.castShadow = rampMesh.receiveShadow = true;
-        tg.add(rampMesh);
-
-        // Colliders le long de la rampe (N_COLL boites plates)
-        for(let i=0;i<N_COLL;i++){
-            const t = (i+0.5)/N_COLL;
-            const cy = fl.baseY + t*FLIGHT_H;
-            const ca = (t-0.5)*RAMP_W;
-            let cx2, cz2;
-            if(fl.fix==='z'){ cx2=wx+ca*fl.dirX; cz2=wz+fl.fixV; }
-            else             { cx2=wx+fl.fixV;    cz2=wz+ca*fl.dirZ; }
-            lc.push({type:'cylinder', x:cx2, y:gy+cy-0.1, z:cz2, r:RAMP_W/(N_COLL*0.8), h:0.35});
-        }
+        rung.rotation.z=Math.PI/2;
+        rung.position.set(0,ry,LADDER_Z);
+        tg.add(rung);
     }
+
+    // Collider unique pour toute la zone de l'échelle
+    lc.push({type:'cylinder',x:wx,y:gy,z:wz+LADDER_Z,r:LADDER_W*0.7,h:TOWER_H+0.5});
 
     // ── PLANCHER PLATEFORME ───────────────────────────────
     const floorW=PLT_HALF*2+0.15;
@@ -398,28 +375,48 @@ function buildTower(wx,wz,grp,lc){
         }
         const nb=Math.ceil(len/0.62)+1;
         for(let i=0;i<=nb;i++){
-            const t=(i/nb-0.5)*len;
-            const bx=ry===0?cx+t:cx, bz=ry===0?cz:cz+t;
+            const t2=(i/nb-0.5)*len;
+            const bx=ry===0?cx+t2:cx, bz=ry===0?cz:cz+t2;
             const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
             bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
         }
         lc.push({type:'cylinder',x:wx+cx,y:gy+TOWER_H,z:wz+cz,r:0.2,h:1.4});
     }
-    // Poteaux d'angle
     for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
         const post=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,railTop-TOWER_H+0.1,6),MAT.towRail);
         post.position.set(px,TOWER_H+(railTop-TOWER_H)/2,pz); tg.add(post);
     }
 
-    // ── TOIT — porté par 4 petits piliers ────────────────
-    const roofPillarH=6;
+    // ── TOIT CARRÉ — porté par 4 petits piliers ──────────
+    const roofPillarH=5;
     for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
         const rp=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,roofPillarH,7),MAT.towLog);
         rp.position.set(px,railTop+roofPillarH/2,pz); tg.add(rp);
     }
-    const roof=new THREE.Mesh(new THREE.ConeGeometry(PLT_HALF+1.2,9,8),MAT.towLog);
-    roof.position.set(0,railTop+roofPillarH+4.5,0);
-    roof.castShadow=true; tg.add(roof);
+
+    // Toit carré = 4 pans inclinés
+    const roofBase=railTop+roofPillarH;
+    const roofH=4, roofHalf=PLT_HALF+1.0;
+    // Pan avant (Z+)
+    const panGeo=new THREE.BufferGeometry();
+    const verts=new Float32Array([
+        -roofHalf,0, roofHalf,
+         roofHalf,0, roofHalf,
+         0,       roofH, 0,
+    ]);
+    panGeo.setAttribute('position',new THREE.BufferAttribute(verts,3));
+    panGeo.computeVertexNormals();
+    for(const [rx,rz] of [[0,0],[Math.PI/2,0],[Math.PI,0],[Math.PI*1.5,0],[0,Math.PI/2],[0,Math.PI*1.5]]){
+        // on utilise ConeGeometry à 4 faces = toit pyramidal carré
+    }
+    // Toit pyramidal carré simplement avec ConeGeometry 4 segments
+    const roofMesh=new THREE.Mesh(
+        new THREE.ConeGeometry(roofHalf*Math.SQRT2, roofH, 4),
+        MAT.towLog
+    );
+    roofMesh.rotation.y=Math.PI/4; // aligner les coins avec la tour
+    roofMesh.position.set(0,roofBase+roofH*0.5,0);
+    roofMesh.castShadow=true; tg.add(roofMesh);
 
     tg.position.set(wx,gy,wz);
     grp.add(tg);
