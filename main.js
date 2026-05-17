@@ -22,21 +22,22 @@ document.body.appendChild(renderer.domElement);
 
 /* ─── SCENE / CAMERA ─────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x7a9e8a, 20, 70);
+scene.fog = new THREE.Fog(0x9bb4c7, 80, 320);
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(0, 10, 0);
 
 /* ─── SKYBOX ─────────────────────────────────────────── */
 const SKY_CANVAS = document.createElement('canvas');
-SKY_CANVAS.width = 2; SKY_CANVAS.height = 256;
+SKY_CANVAS.width = 2; SKY_CANVAS.height = 512;
 const SKY_CTX = SKY_CANVAS.getContext('2d');
 const skyTex = new THREE.CanvasTexture(SKY_CANVAS);
 scene.background = skyTex;
 const SKY = {
-    day:    { top:[0.10,0.44,0.83], hor:[0.49,0.78,0.94] },
-    sunset: { top:[0.23,0.06,0.38], hor:[1.00,0.27,0.00] },
-    night:  { top:[0.04,0.08,0.21], hor:[0.09,0.13,0.25] },
-    dawn:   { top:[0.23,0.06,0.38], hor:[1.00,0.40,0.13] },
+    day:    { top:[0.10,0.44,0.83], hor:[0.55,0.80,0.95] },
+    golden: { top:[0.18,0.10,0.35], hor:[1.00,0.55,0.05] },
+    sunset: { top:[0.12,0.04,0.28], hor:[1.00,0.28,0.02] },
+    night:  { top:[0.03,0.05,0.18], hor:[0.07,0.10,0.20] },
+    dawn:   { top:[0.15,0.04,0.28], hor:[1.00,0.42,0.10] },
 };
 function lerp3(a,b,t){ return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]; }
 function toCSS(rgb){ return `rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`; }
@@ -44,9 +45,11 @@ let _top=SKY.day.top.slice(), _hor=SKY.day.hor.slice();
 function setSky(s){ _top=s.top.slice(); _hor=s.hor.slice(); }
 function lerpSky(a,b,t){ _top=lerp3(a.top,b.top,t); _hor=lerp3(a.hor,b.hor,t); }
 function drawSky(){
-    const g=SKY_CTX.createLinearGradient(0,0,0,256);
-    g.addColorStop(0,toCSS(_top)); g.addColorStop(1,toCSS(_hor));
-    SKY_CTX.fillStyle=g; SKY_CTX.fillRect(0,0,2,256); skyTex.needsUpdate=true;
+    const g=SKY_CTX.createLinearGradient(0,0,0,512);
+    g.addColorStop(0,toCSS(_top));
+    g.addColorStop(0.5,toCSS(lerp3(_top,_hor,0.4)));
+    g.addColorStop(1,toCSS(_hor));
+    SKY_CTX.fillStyle=g; SKY_CTX.fillRect(0,0,2,512); skyTex.needsUpdate=true;
 }
 
 /* ─── LUMIÈRES ───────────────────────────────────────── */
@@ -55,54 +58,48 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff5e0, 3.0);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(1024);
-sun.shadow.camera.left = sun.shadow.camera.bottom = -120;
-sun.shadow.camera.right = sun.shadow.camera.top = 120;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -150;
+sun.shadow.camera.right = sun.shadow.camera.top = 150;
 sun.shadow.camera.far = 1500;
 scene.add(sun);
-const moonLight = new THREE.DirectionalLight(0x4466bb, 0);
+const moonLight = new THREE.DirectionalLight(0x4466bb, 0.5); // nuit visible
 scene.add(moonLight);
+const warmFill = new THREE.DirectionalLight(0xff6600, 0); // lever/coucher
+scene.add(warmFill);
 
 /* ─── SPRITES SOLEIL & LUNE ──────────────────────────── */
-function makeCircleSprite(inner,outer){
+function makeRadialSprite(stops, sz){
     const c=document.createElement('canvas'); c.width=c.height=256;
     const ctx=c.getContext('2d');
     const g=ctx.createRadialGradient(128,128,0,128,128,128);
-    g.addColorStop(0,inner); g.addColorStop(0.3,outer);
-    g.addColorStop(0.7,outer.replace(/[\d.]+\)$/,'0.15)')); g.addColorStop(1,'rgba(0,0,0,0)');
+    stops.forEach(([t,col])=>g.addColorStop(t,col));
     ctx.fillStyle=g; ctx.fillRect(0,0,256,256);
-    return new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+    sp.scale.setScalar(sz); return sp;
 }
-function makeGlowSprite(color){
-    const c=document.createElement('canvas'); c.width=c.height=256;
-    const ctx=c.getContext('2d');
-    const g=ctx.createRadialGradient(128,128,0,128,128,128);
-    g.addColorStop(0,color); g.addColorStop(0.4,color.replace(/[\d.]+\)$/,'0.3)')); g.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=g; ctx.fillRect(0,0,256,256);
-    return new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
-}
-const sunSprite=makeCircleSprite('rgba(255,255,220,1)','rgba(255,200,50,0.8)');
-const sunGlow=makeGlowSprite('rgba(255,160,30,0.6)');
-const moonSprite=makeCircleSprite('rgba(230,240,255,1)','rgba(150,170,220,0.7)');
-const moonGlow=makeGlowSprite('rgba(80,100,180,0.4)');
-sunSprite.scale.setScalar(200); sunGlow.scale.setScalar(500);
-moonSprite.scale.setScalar(140); moonGlow.scale.setScalar(360);
-scene.add(sunSprite,sunGlow,moonSprite,moonGlow);
+// Soleil plus grand et plus net
+const sunCore  = makeRadialSprite([[0,'rgba(255,255,240,1)'],[0.18,'rgba(255,240,180,0.95)'],[0.35,'rgba(255,200,60,0.6)'],[0.7,'rgba(255,140,20,0.2)'],[1,'rgba(0,0,0,0)']],260);
+const sunGlow  = makeRadialSprite([[0,'rgba(255,160,30,0.55)'],[0.5,'rgba(255,80,0,0.15)'],[1,'rgba(0,0,0,0)']],700);
+const sunHalo  = makeRadialSprite([[0,'rgba(255,100,0,0.35)'],[1,'rgba(0,0,0,0)']],1600); // halo horizon lever/coucher
+const moonCore = makeRadialSprite([[0,'rgba(230,240,255,1)'],[0.25,'rgba(200,215,245,0.9)'],[0.5,'rgba(150,170,220,0.5)'],[1,'rgba(0,0,0,0)']],170);
+const moonGlow = makeRadialSprite([[0,'rgba(80,100,200,0.4)'],[1,'rgba(0,0,0,0)']],400);
+scene.add(sunCore,sunGlow,sunHalo,moonCore,moonGlow);
 
 /* ─── ÉTOILES ────────────────────────────────────────── */
-const STAR_COUNT=1200;
+const STAR_COUNT=1400;
 const starPos=new Float32Array(STAR_COUNT*3), starSz=new Float32Array(STAR_COUNT);
 for(let i=0;i<STAR_COUNT;i++){
     const th=2*Math.PI*Math.random(), ph=Math.acos(2*Math.random()-1), r=1600;
     starPos[i*3]=r*Math.sin(ph)*Math.cos(th); starPos[i*3+1]=Math.abs(r*Math.cos(ph))+80; starPos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
-    starSz[i]=1.5+Math.random()*3.5;
+    starSz[i]=1.5+Math.random()*4.0;
 }
 const starGeo=new THREE.BufferGeometry();
 starGeo.setAttribute('position',new THREE.BufferAttribute(starPos,3));
 starGeo.setAttribute('size',new THREE.BufferAttribute(starSz,1));
 const starMat=new THREE.ShaderMaterial({
     uniforms:{uOp:{value:0},uT:{value:0}},
-    vertexShader:`attribute float size;uniform float uT;void main(){vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=size*(1.+0.3*sin(uT*2.+size*13.7));gl_Position=projectionMatrix*mv;}`,
-    fragmentShader:`uniform float uOp;void main(){vec2 uv=gl_PointCoord-.5;float d=length(uv);if(d>.5)discard;float b=pow(1.-d*2.,1.5);gl_FragColor=vec4(1.,1.,.95,b*uOp);}`,
+    vertexShader:`attribute float size;uniform float uT;void main(){vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=size*(1.+0.25*sin(uT*1.8+size*13.7));gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`uniform float uOp;void main(){vec2 uv=gl_PointCoord-.5;float d=length(uv);if(d>.5)discard;float b=pow(1.-d*2.,1.5);gl_FragColor=vec4(1.,1.,.9,b*uOp);}`,
     transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
 });
 const starsObj=new THREE.Points(starGeo,starMat);
@@ -113,28 +110,58 @@ const DAY_DURATION=1200, ORBIT_R=1400;
 function updateDayNight(elapsed){
     const angle=((elapsed/DAY_DURATION)*Math.PI*2)%(Math.PI*2);
     const sinA=Math.sin(angle),sf=Math.max(0,sinA),sfS=sf*sf*(3-2*sf),mf=Math.max(0,-sinA),mfS=mf*mf*(3-2*mf);
+    const horizF=Math.max(0,1-Math.abs(sinA)*3.5)*sf; // max au lever/coucher
+
     const sunX=Math.cos(angle)*ORBIT_R,sunY=Math.sin(angle)*ORBIT_R;
     sun.position.set(sunX,sunY,ORBIT_R*0.25);
     moonLight.position.set(-sunX,-sunY,ORBIT_R*0.25);
+    warmFill.position.set(sunX,sunY*0.3,ORBIT_R*0.25);
+
     const cp=camera.position;
     const sd=new THREE.Vector3(sunX,sunY,ORBIT_R*0.25).normalize(),md=sd.clone().negate();
-    sunSprite.position.copy(cp).addScaledVector(sd,1350); sunGlow.position.copy(cp).addScaledVector(sd,1340);
-    moonSprite.position.copy(cp).addScaledVector(md,1350); moonGlow.position.copy(cp).addScaledVector(md,1340);
-    sun.intensity=0.05+sfS*3.0; moonLight.intensity=0.20+mfS*0.5; hemi.intensity=0.30+sfS*0.9;
-    sunSprite.material.opacity=Math.pow(sf,0.35); sunGlow.material.opacity=Math.pow(sf,0.5)*0.8;
-    moonSprite.material.opacity=Math.pow(mf,0.35); moonGlow.material.opacity=Math.pow(mf,0.5)*0.7;
-    scene.fog.color.lerpColors(new THREE.Color(0x04091f),new THREE.Color(0x7a9e8a),sfS);
-    scene.fog.near=20+sfS*20; scene.fog.far=70+sfS*50;
-    starMat.uniforms.uOp.value=Math.max(0,1-sfS*2.0)*0.95;
+    const sdH=new THREE.Vector3(sunX,0,ORBIT_R*0.25).normalize();
+    sunCore.position.copy(cp).addScaledVector(sd,1350);
+    sunGlow.position.copy(cp).addScaledVector(sd,1340);
+    sunHalo.position.copy(cp).addScaledVector(sdH,1200);
+    moonCore.position.copy(cp).addScaledVector(md,1350);
+    moonGlow.position.copy(cp).addScaledVector(md,1340);
+
+    // Couleur soleil selon hauteur (blanc→orange→rouge)
+    const sr=1.0, sg=Math.max(0.35,0.96-horizF*0.55), sb=Math.max(0.0,0.88-horizF*0.88);
+    sun.color.setRGB(sr,sg,sb);
+    sun.intensity=0.02+sfS*3.2;
+    moonLight.intensity=0.45+mfS*0.4; // lune plus lumineuse → nuit visible
+    hemi.intensity=0.35+sfS*0.85;     // ambiant minimum élevé
+    warmFill.intensity=horizF*1.6;
+
+    sunCore.material.opacity=Math.pow(sf,0.3);
+    sunGlow.material.opacity=Math.pow(sf,0.4)*0.85;
+    sunHalo.material.opacity=horizF*Math.pow(sf,0.2)*0.6;
+    moonCore.material.opacity=Math.pow(mf,0.3);
+    moonGlow.material.opacity=Math.pow(mf,0.45)*0.7;
+
+    // Brouillard coloré
+    const fogDay=new THREE.Color(0x9bb4c7),fogNight=new THREE.Color(0x080e1a),fogDusk=new THREE.Color(0xc04818);
+    const fogC=new THREE.Color().lerpColors(fogNight,fogDay,sfS);
+    fogC.lerp(fogDusk,horizF*0.7);
+    scene.fog.color.copy(fogC);
+    scene.fog.near=80; scene.fog.far=280+sfS*80;
+
+    starMat.uniforms.uOp.value=Math.max(0,1-sfS*2.2)*0.95;
     starMat.uniforms.uT.value=elapsed;
     starsObj.position.copy(cp);
+
     const a=angle,PI=Math.PI;
-    if(a<PI*0.20)      lerpSky(SKY.dawn,SKY.day,a/(PI*0.20));
-    else if(a<PI*0.75) setSky(SKY.day);
-    else if(a<PI*1.10) lerpSky(SKY.day,SKY.sunset,(a-PI*0.75)/(PI*0.35));
-    else if(a<PI*1.40) lerpSky(SKY.sunset,SKY.night,(a-PI*1.10)/(PI*0.30));
-    else if(a<PI*1.75) setSky(SKY.night);
-    else               lerpSky(SKY.night,SKY.dawn,(a-PI*1.75)/(PI*0.25));
+    if(a<PI*0.08)       lerpSky(SKY.dawn,  SKY.golden, a/(PI*0.08));
+    else if(a<PI*0.20)  lerpSky(SKY.golden,SKY.day,    (a-PI*0.08)/(PI*0.12));
+    else if(a<PI*0.78)  setSky(SKY.day);
+    else if(a<PI*0.98)  lerpSky(SKY.day,   SKY.golden, (a-PI*0.78)/(PI*0.20));
+    else if(a<PI*1.12)  lerpSky(SKY.golden,SKY.sunset, (a-PI*0.98)/(PI*0.14));
+    else if(a<PI*1.40)  lerpSky(SKY.sunset,SKY.night,  (a-PI*1.12)/(PI*0.28));
+    else if(a<PI*1.75)  setSky(SKY.night);
+    else                lerpSky(SKY.night, SKY.dawn,   (a-PI*1.75)/(PI*0.25));
+    // Horizon skybox = couleur brouillard pour seamless
+    _hor=[fogC.r,fogC.g,fogC.b];
     drawSky();
 }
 
@@ -144,8 +171,7 @@ function initMusic(){
     const play=()=>{ audio.currentTime=0; audio.play().catch(()=>{}); };
     audio.addEventListener('ended',()=>setTimeout(play,120000));
     let started=false;
-    const start=()=>{ if(started)return; started=true; play(); document.removeEventListener('click',start); };
-    document.addEventListener('click',start);
+    document.addEventListener('click',()=>{ if(started)return; started=true; play(); },{once:true});
 }
 initMusic();
 
@@ -205,6 +231,8 @@ const MAT={
     towLog:   new THREE.MeshStandardMaterial({color:0x1e0f06,roughness:1.0}),
     towPlank: new THREE.MeshStandardMaterial({color:0x2c1a0a,roughness:0.95}),
     towRail:  new THREE.MeshStandardMaterial({color:0x170c04,roughness:1.0}),
+    mtn:      new THREE.MeshStandardMaterial({color:0x4a5a3a,roughness:1,flatShading:true}),
+    mtnSnow:  new THREE.MeshStandardMaterial({color:0xd8ddd0,roughness:0.8,flatShading:true}),
 };
 const CONE_MATS=[MAT.cone0,MAT.cone1,MAT.cone2];
 const FLOWER_COLORS=[0xff4444,0x4444ff,0xffff55,0xffffff,0xff66cc];
@@ -221,50 +249,64 @@ const GEO={
     mushStem: new THREE.CylinderGeometry(0.1,0.12,0.4,6),
     mushCap:  new THREE.SphereGeometry(0.5,8,5,0,Math.PI*2,0,Math.PI*0.55),
     mushSpot: new THREE.SphereGeometry(0.07,4,4),
-    // Tour — unités de base scalées
-    towLogV:  new THREE.CylinderGeometry(0.55,0.65,1,9),  // tronc vertical, scale Y
-    towLogH:  new THREE.CylinderGeometry(0.16,0.16,1,7),  // poutre ronde, scale X ou Z
-    towPlank: new THREE.BoxGeometry(1,0.18,0.65),          // planche/marche, scale X
-    towRailH: new THREE.CylinderGeometry(0.07,0.07,1,5),  // rail horiz, scale X
-    towBarV:  new THREE.CylinderGeometry(0.05,0.05,1.15,5), // barreau vertical
+    towPlank: new THREE.BoxGeometry(1,0.18,0.65),
+    towBarV:  new THREE.CylinderGeometry(0.05,0.05,1.15,5),
 };
 
 /* ─── GLOBAUX ────────────────────────────────────────── */
 const windObjects=[], fireflyData=[], globalColliders=[];
 
-/* ─────────────────────────────────────────────────────────
-   TOUR D'OBSERVATION
-   - 4 gros piliers en troncs (rayon ~0.55-0.65), aspect bois brut
-   - Renforts en logs ronds horizontaux
-   - Escalier zigzag sur face Z- (8 volées de 8 marches)
-   - Plateforme 5×5u à TOWER_H, plancher en planches
-   - Garde-corps 3 côtés + ouverture côté escalier
-   - Toit conique
-───────────────────────────────────────────────────────── */
-const TOWER_H  = 40;  // hauteur plancher plateforme
-const PLT_HALF = 2.6; // demi-largeur plateforme (~5.2u)
+/* ═══════════════════════════════════════════════════════
+   MONTAGNES DÉCOR — lointaines, inatteignables
+   Anneau de pics low-poly placés à ~500-900u du centre
+═══════════════════════════════════════════════════════ */
+function buildMountains(){
+    const MTN_COUNT=18;
+    const rng=()=>Math.random();
+    for(let i=0;i<MTN_COUNT;i++){
+        const angle=(i/MTN_COUNT)*Math.PI*2+(rng()-0.5)*0.3;
+        const dist=500+rng()*400;
+        const mx=Math.cos(angle)*dist, mz=Math.sin(angle)*dist;
+        const baseY=findY(mx,mz);
+        const H=80+rng()*120;   // hauteur 80-200u
+        const R=40+rng()*60;    // rayon base 40-100u
 
-// Fréquence : une tour par cellule 5×5 de chunks = ~400u
-// Spawn : (22,22) dans chunk (0,0)
+        // Corps principal
+        const body=new THREE.Mesh(new THREE.ConeGeometry(R,H,7,1),MAT.mtn);
+        body.position.set(mx,baseY+H*0.5-8,mz);
+        body.rotation.y=rng()*Math.PI;
+        scene.add(body);
+
+        // Calotte neigeuse (1/4 supérieur)
+        const snowH=H*0.28, snowR=R*(snowH/H);
+        const snow=new THREE.Mesh(new THREE.ConeGeometry(snowR,snowH,7,1),MAT.mtnSnow);
+        snow.position.set(mx,baseY+H-snowH*0.5-8,mz);
+        snow.rotation.y=body.rotation.y;
+        scene.add(snow);
+    }
+}
+buildMountains();
+
+/* ═══════════════════════════════════════════════════════
+   TOUR D'OBSERVATION — escalier hélicoïdal autour du pilier
+   Structure carrée en bois, marches qui tournent autour
+═══════════════════════════════════════════════════════ */
+const TOWER_H=38, PLT_HALF=3.0;
+
 function chunkHasTower(cx,cz){
     if(cx===0&&cz===0) return true;
-    // Cellule 5×5
-    const cellX=Math.floor(cx/5), cellZ=Math.floor(cz/5);
-    if(cellX===0&&cellZ===0) return false; // cellule spawn déjà gérée
-    // Hash du chunk courant
+    const cellX=Math.floor(cx/5),cellZ=Math.floor(cz/5);
+    if(cellX===0&&cellZ===0) return false;
     let h=(cx*374761393+cz*668265263)^0xdeadbeef;
     h=Math.imul(h^(h>>>16),0x45d9f3b); h^=h>>>16;
     const val=(h>>>0)/0xffffffff;
-    // Vrai seulement si ce chunk a le hash max dans sa cellule 5×5
-    for(let dx=-4;dx<=4;dx++){
-        for(let dz=-4;dz<=4;dz++){
-            if(dx===0&&dz===0) continue;
-            const nx=cx+dx,nz=cz+dz;
-            if(Math.floor(nx/5)!==cellX||Math.floor(nz/5)!==cellZ) continue;
-            let h2=(nx*374761393+nz*668265263)^0xdeadbeef;
-            h2=Math.imul(h2^(h2>>>16),0x45d9f3b); h2^=h2>>>16;
-            if((h2>>>0)/0xffffffff>val) return false;
-        }
+    for(let dx=-4;dx<=4;dx++) for(let dz=-4;dz<=4;dz++){
+        if(dx===0&&dz===0) continue;
+        const nx=cx+dx,nz=cz+dz;
+        if(Math.floor(nx/5)!==cellX||Math.floor(nz/5)!==cellZ) continue;
+        let h2=(nx*374761393+nz*668265263)^0xdeadbeef;
+        h2=Math.imul(h2^(h2>>>16),0x45d9f3b); h2^=h2>>>16;
+        if((h2>>>0)/0xffffffff>val) return false;
     }
     return true;
 }
@@ -272,148 +314,127 @@ function chunkHasTower(cx,cz){
 function buildTower(wx,wz,grp,lc){
     const gy=findY(wx,wz);
     const tg=new THREE.Group();
+    const pillarH=TOWER_H+5;
 
-    const pillarH=TOWER_H+4; // enfoncé 4u dans le sol
-    // ── 4 PILIERS EN TRONCS ──────────────────────────────
-    // Positions et rayons légèrement différents pour aspect naturel
+    // ── 4 PILIERS ───────────────────────────────────────
     const pDef=[
-        {ox:-PLT_HALF,oz:-PLT_HALF,rb:0.65,rt:0.55},
-        {ox: PLT_HALF,oz:-PLT_HALF,rb:0.62,rt:0.52},
-        {ox: PLT_HALF,oz: PLT_HALF,rb:0.68,rt:0.58},
-        {ox:-PLT_HALF,oz: PLT_HALF,rb:0.60,rt:0.50},
+        {ox:-PLT_HALF,oz:-PLT_HALF,rb:0.70,rt:0.58},
+        {ox: PLT_HALF,oz:-PLT_HALF,rb:0.66,rt:0.54},
+        {ox: PLT_HALF,oz: PLT_HALF,rb:0.72,rt:0.60},
+        {ox:-PLT_HALF,oz: PLT_HALF,rb:0.64,rt:0.52},
     ];
     for(const p of pDef){
         const mesh=new THREE.Mesh(new THREE.CylinderGeometry(p.rt,p.rb,pillarH,10),MAT.towLog);
-        mesh.position.set(p.ox,pillarH/2-4,p.oz);
-        mesh.castShadow=true; tg.add(mesh);
+        mesh.position.set(p.ox,pillarH/2-5,p.oz);
+        mesh.castShadow=true; mesh.receiveShadow=true; tg.add(mesh);
     }
 
-    // ── RENFORTS HORIZONTAUX (logs ronds) ────────────────
-    const beamLen=PLT_HALF*2+0.5;
-    for(let y=6;y<TOWER_H-2;y+=7){
-        // côtés Z- et Z+ (rotation Z pour horizontal selon X)
+    // ── RENFORTS HORIZONTAUX ─────────────────────────────
+    const beamLen=PLT_HALF*2+0.6;
+    for(let y=5;y<TOWER_H-2;y+=6){
         for(const oz of [-PLT_HALF,PLT_HALF]){
-            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,beamLen,7),MAT.towLog);
-            b.rotation.z=Math.PI/2; b.position.set(0,y,oz); tg.add(b);
+            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,beamLen,7),MAT.towLog);
+            b.rotation.z=Math.PI/2; b.position.set(0,y,oz); b.castShadow=true; tg.add(b);
         }
-        // côtés X- et X+ (rotation X pour horizontal selon Z)
         for(const ox of [-PLT_HALF,PLT_HALF]){
-            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,beamLen,7),MAT.towLog);
-            b.rotation.x=Math.PI/2; b.position.set(ox,y+0.4,0); tg.add(b);
+            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,beamLen,7),MAT.towLog);
+            b.rotation.x=Math.PI/2; b.position.set(ox,y+0.45,0); b.castShadow=true; tg.add(b);
         }
     }
 
-    // ── ESCALIER ZIGZAG ──────────────────────────────────
-    // Escalier sur face Z-, montant alternativement gauche→droite puis droite→gauche
-    // 8 volées × 8 marches = 64 marches total sur TOWER_H=40u
-    const N_FLIGHTS=8, STEPS_PER=8;
-    const STAIR_W=PLT_HALF*2;   // largeur d'une volée = largeur de la tour
-    const STEP_W=STAIR_W/STEPS_PER; // largeur d'une marche
-    const STEP_H=TOWER_H/(N_FLIGHTS*STEPS_PER); // hauteur par marche ~0.625u
-    const STAIR_Z=-PLT_HALF-0.9; // Z de l'escalier (juste devant face Z-)
+    // ── ESCALIER HÉLICOÏDAL ──────────────────────────────
+    // Les marches tournent autour de la tour (sur un rayon = PLT_HALF + 1.2)
+    // 1 tour complet = TOWER_H de hauteur → 32 marches pour 1.25 tour
+    const STEPS=40;                         // nombre de marches total
+    const STAIR_R=PLT_HALF+1.1;            // rayon autour du pilier central
+    const STEP_HEIGHT=TOWER_H/STEPS;        // ~0.95u par marche
+    const ANGLE_STEP=(Math.PI*2.5)/STEPS;  // 1.25 tour total
+    const STEP_W=1.5, STEP_D=0.7;
 
-    // Deux montants verticaux de soutien escalier
-    for(const sx of [-PLT_HALF+0.2,PLT_HALF-0.2]){
-        const sp=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.16,TOWER_H+1,8),MAT.towLog);
-        sp.position.set(sx,TOWER_H/2-0.5,STAIR_Z-0.1); sp.castShadow=true; tg.add(sp);
-    }
+    for(let s=0;s<STEPS;s++){
+        const a=s*ANGLE_STEP;
+        const stepY=s*STEP_HEIGHT;
+        const sx=Math.cos(a)*STAIR_R;
+        const sz=Math.sin(a)*STAIR_R;
 
-    for(let f=0;f<N_FLIGHTS;f++){
-        const dir=(f%2===0)?1:-1; // alterne direction
-        const flightBaseY=f*(STEPS_PER*STEP_H);
-        for(let s=0;s<STEPS_PER;s++){
-            const stepY=flightBaseY+s*STEP_H;
-            const frac=s/STEPS_PER;
-            // Position X : couvre de -PLT_HALF à +PLT_HALF selon direction
-            const stepX=dir*((frac+0.5/STEPS_PER)-0.5)*STAIR_W;
-            const step=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
-            step.scale.set(STEP_W/1,1,1);
-            step.position.set(stepX,stepY,STAIR_Z);
-            step.castShadow=true; tg.add(step);
-            // Collider marche
-            lc.push({type:'cylinder',x:wx+stepX,y:gy+stepY-0.05,z:wz+STAIR_Z,r:STEP_W*0.55,h:0.25});
-        }
-        // Palier de changement de direction (planche large)
-        if(f<N_FLIGHTS-1){
-            const palY=flightBaseY+STEPS_PER*STEP_H;
-            const palX=dir*(PLT_HALF-STEP_W*0.5);
-            const pal=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
-            pal.scale.set(STEP_W*1.5,1,1.4);
-            pal.position.set(palX,palY,STAIR_Z);
-            tg.add(pal);
-            lc.push({type:'cylinder',x:wx+palX,y:gy+palY-0.05,z:wz+STAIR_Z,r:STEP_W,h:0.28});
+        const step=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
+        step.scale.set(STEP_W,1,STEP_D);
+        step.position.set(sx,stepY,sz);
+        step.rotation.y=-a; // orienter la marche tangentiellement
+        step.castShadow=true;
+        tg.add(step);
+
+        // Collider de chaque marche (cylindre petit)
+        lc.push({type:'cylinder',x:wx+sx,y:gy+stepY-0.06,z:wz+sz,r:STEP_W*0.6,h:0.28});
+
+        // Barreau de garde-corps
+        if(s%2===0){
+            const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.1,5),MAT.towRail);
+            bar.position.set(sx*(1+0.18/STAIR_R),stepY+0.55,sz*(1+0.18/STAIR_R));
+            tg.add(bar);
         }
     }
 
-    // Rampe garde-corps escalier (2 poteaux verticaux aux extrémités + une barre)
-    for(const sx of [-PLT_HALF+0.05,PLT_HALF-0.05]){
-        const ramp=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,TOWER_H,5),MAT.towRail);
-        ramp.position.set(sx,TOWER_H/2,STAIR_Z-0.35); tg.add(ramp);
+    // Rail garde-corps hélicoïdal (tube fin qui suit le chemin)
+    const railPts=[];
+    for(let s=0;s<=STEPS;s++){
+        const a=s*ANGLE_STEP, y=s*STEP_HEIGHT+0.9;
+        railPts.push(new THREE.Vector3(Math.cos(a)*(STAIR_R+0.22),y,Math.sin(a)*(STAIR_R+0.22)));
     }
+    const railCurve=new THREE.CatmullRomCurve3(railPts);
+    const railGeo=new THREE.TubeGeometry(railCurve,STEPS*2,0.055,5,false);
+    const railMesh=new THREE.Mesh(railGeo,MAT.towRail);
+    tg.add(railMesh);
 
     // ── PLANCHER PLATEFORME ───────────────────────────────
-    const floorW=PLT_HALF*2+0.15;
-    const nPlanks=9;
-    for(let i=0;i<nPlanks;i++){
-        const t=i/(nPlanks-1);
-        const pz=-PLT_HALF+t*PLT_HALF*2;
+    const floorW=PLT_HALF*2+0.2;
+    for(let i=0;i<10;i++){
+        const t=i/9, pz=-PLT_HALF+t*PLT_HALF*2;
         const pl=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
         pl.scale.set(floorW,1,1); pl.position.set(0,TOWER_H,pz);
-        pl.receiveShadow=true; tg.add(pl);
+        pl.receiveShadow=true; pl.castShadow=true; tg.add(pl);
     }
-    // Collider unique pour toute la plateforme
-    lc.push({type:'cylinder',x:wx,y:gy+TOWER_H-0.1,z:wz,r:PLT_HALF+0.5,h:0.4});
+    lc.push({type:'cylinder',x:wx,y:gy+TOWER_H-0.1,z:wz,r:PLT_HALF+0.6,h:0.4});
 
-    // Poutres de soutien plancher (sous la plateforme)
+    // Poutres soutien plancher
     for(const oz of [-PLT_HALF*0.5,PLT_HALF*0.5]){
-        const sb=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,floorW+0.3,7),MAT.towLog);
-        sb.rotation.z=Math.PI/2; sb.position.set(0,TOWER_H-0.28,oz); tg.add(sb);
+        const sb=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.20,floorW+0.4,7),MAT.towLog);
+        sb.rotation.z=Math.PI/2; sb.position.set(0,TOWER_H-0.3,oz); tg.add(sb);
     }
 
-    // ── GARDE-CORPS (Z+, X-, X+ — ouvert côté Z- = escalier) ─
-    const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
-    // Définition : [cx, cz, rotY, len]
+    // ── GARDE-CORPS PLATEFORME ────────────────────────────
+    const railTop=TOWER_H+1.15,railMid=TOWER_H+0.58;
     const gcSides=[
-        [0, PLT_HALF+0.1, 0, floorW],   // face Z+
-        [-PLT_HALF-0.1, 0, Math.PI/2, floorW], // face X-
-        [ PLT_HALF+0.1, 0, Math.PI/2, floorW], // face X+
+        [0,PLT_HALF+0.1,0,floorW],
+        [-PLT_HALF-0.1,0,Math.PI/2,floorW],
+        [PLT_HALF+0.1,0,Math.PI/2,floorW],
+        [0,-PLT_HALF-0.1,0,floorW],
     ];
-    for(const [cx,cz,ry,len] of gcSides){
-        // Rails haut et mi
-        for(const rh of [railMid,railTop]){
+    for(const[cx2,cz2,ry,len] of gcSides){
+        for(const rh of[railMid,railTop]){
             const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
-            r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
+            r.rotation.set(0,ry,Math.PI/2); r.position.set(cx2,rh,cz2); tg.add(r);
         }
-        // Barreaux verticaux
-        const nb=Math.ceil(len/0.62)+1;
+        const nb=Math.ceil(len/0.65)+1;
         for(let i=0;i<=nb;i++){
             const t=(i/nb-0.5)*len;
-            const bx=ry===0?cx+t:cx, bz=ry===0?cz:cz+t;
+            const bx=ry===0?cx2+t:cx2,bz2=ry===0?cz2:cz2+t;
             const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
-            bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
+            bar.position.set(bx,TOWER_H+0.72,bz2); tg.add(bar);
         }
     }
-    // Demi-rails côté Z- (juste aux deux extrémités pour fermer les angles)
-    for(const sx of [-PLT_HALF,PLT_HALF]){
-        const halfLen=PLT_HALF*0.55;
-        for(const rh of [railMid,railTop]){
-            const r=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,halfLen,5),MAT.towRail);
-            r.rotation.set(0,0,Math.PI/2); r.position.set(sx,rh,-PLT_HALF+halfLen/2-0.1); tg.add(r);
-        }
-    }
-    // Poteaux d'angle garde-corps
-    for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
-        const p=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,railTop-TOWER_H+0.1,6),MAT.towRail);
+    for(const[px,pz] of[[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
+        const p=new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.10,railTop-TOWER_H+0.1,6),MAT.towRail);
         p.position.set(px,TOWER_H+(railTop-TOWER_H)/2,pz); tg.add(p);
     }
 
     // ── TOIT ─────────────────────────────────────────────
-    const roof=new THREE.Mesh(new THREE.ConeGeometry(PLT_HALF+0.9,3.8,8),MAT.towLog);
-    roof.position.set(0,railTop+2,0); roof.castShadow=true; tg.add(roof);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(PLT_HALF+1.1,4.5,8),MAT.towLog);
+    roof.position.set(0,railTop+2.3,0); roof.castShadow=true; tg.add(roof);
 
     tg.position.set(wx,gy,wz);
     grp.add(tg);
-    return {wx,wz,clearR:PLT_HALF+6};
+    return{wx,wz,clearR:PLT_HALF+STAIR_R+2};
 }
 
 /* ─── CHAMPIGNONS ────────────────────────────────────── */
@@ -432,29 +453,40 @@ function buildMushroom(wx,wz,gy,r,grp){
     }
 }
 
-/* ─── CHUNKS ─────────────────────────────────────────── */
-const CHUNK_SIZE=80, CHUNK_SEGS=14, CHUNK_RADIUS=2;
+/* ═══════════════════════════════════════════════════════
+   CHUNKS — LOD 3 niveaux
+   LOD 0 (dist≤1) : plein détail + colliders
+   LOD 1 (dist=2) : arbres simplifiés, pas de déco sol, colliders réduits
+   LOD 2 (dist=3) : silhouette seule, 0 collider
+═══════════════════════════════════════════════════════ */
+const CHUNK_SIZE=80, CHUNK_RADIUS=3;
+const SEGS=[14,8,4]; // segments terrain par LOD
 const loadedChunks=new Map(), chunkFadeIn=new Map();
+
 function seededRng(seed){
     let s=(seed^0xdeadbeef)|0;
     return ()=>{ s=Math.imul(s^(s>>>16),0x45d9f3b); s=Math.imul(s^(s>>>16),0x45d9f3b); s^=s>>>16; return (s>>>0)/0xffffffff; };
 }
 
-function generateChunk(cx,cz){
+function generateChunk(cx,cz,lod){
     const key=cx+','+cz;
     if(loadedChunks.has(key)) return;
     loadedChunks.set(key,null);
-    requestAnimationFrame(()=>_buildChunk(cx,cz,key));
+    // Échelonner la génération selon LOD
+    let delay=lod;
+    const tick=()=>{ if(--delay>0) requestAnimationFrame(tick); else _buildChunk(cx,cz,key,lod); };
+    requestAnimationFrame(tick);
 }
 
-function _buildChunk(cx,cz,key){
+function _buildChunk(cx,cz,key,lod){
     if(!loadedChunks.has(key)) return;
     const oX=cx*CHUNK_SIZE,oZ=cz*CHUNK_SIZE;
     const r=seededRng(cx*73856093^cz*19349663);
     const grp=new THREE.Group(),lc=[];
 
     /* SOL */
-    const tgeo=new THREE.PlaneGeometry(CHUNK_SIZE,CHUNK_SIZE,CHUNK_SEGS,CHUNK_SEGS);
+    const segs=SEGS[lod];
+    const tgeo=new THREE.PlaneGeometry(CHUNK_SIZE,CHUNK_SIZE,segs,segs);
     const vp=tgeo.attributes.position.array;
     for(let i=0;i<vp.length;i+=3) vp[i+2]=fbm(oX+vp[i],oZ-vp[i+1]);
     tgeo.computeVertexNormals();
@@ -462,108 +494,130 @@ function _buildChunk(cx,cz,key){
     terr.rotation.x=-Math.PI/2; terr.position.set(oX,0,oZ); terr.receiveShadow=true;
     grp.add(terr);
 
+    /* LOD 2 : silhouette arbres seulement */
+    if(lod===2){
+        const tn=4+(r()*4|0);
+        for(let i=0;i<tn;i++){
+            const wx=oX+(r()-0.5)*CHUNK_SIZE*0.85,wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
+            const gy=findY(wx,wz),h=30+r()*16,tr=1.5+r()*0.8;
+            const tg2=new THREE.Group();
+            const trunk=new THREE.Mesh(new THREE.CylinderGeometry(tr*0.5,tr*1.3,h*0.32+5,6),MAT.trunk);
+            trunk.position.y=h*0.32/2-2.5; tg2.add(trunk);
+            const cone=new THREE.Mesh(new THREE.ConeGeometry(tr*4.5+2,h*0.75,6),MAT.cone1);
+            cone.position.y=h*0.32+h*0.75*0.42; tg2.add(cone);
+            tg2.position.set(wx,gy,wz); grp.add(tg2);
+        }
+        scene.add(grp);
+        loadedChunks.set(key,{group:grp,localColliders:[],lod});
+        chunkFadeIn.set(key,{group:grp,alpha:0});
+        return;
+    }
+
     /* TOUR */
     let towerInfo=null;
-    if(chunkHasTower(cx,cz)){
+    if(lod===0&&chunkHasTower(cx,cz)){
         let twx,twz;
         if(cx===0&&cz===0){ twx=22; twz=22; }
-        else {
-            const rng2=seededRng(cx*19349663^cz*73856093);
-            twx=oX+(rng2()-0.5)*CHUNK_SIZE*0.5;
-            twz=oZ+(rng2()-0.5)*CHUNK_SIZE*0.5;
-        }
+        else{ const r2=seededRng(cx*19349663^cz*73856093); twx=oX+(r2()-0.5)*CHUNK_SIZE*0.5; twz=oZ+(r2()-0.5)*CHUNK_SIZE*0.5; }
         towerInfo=buildTower(twx,twz,grp,lc);
     }
 
     /* POINTS OCCUPÉS */
     const occupied=[];
-    if(towerInfo) occupied.push({x:towerInfo.wx,z:towerInfo.wz,r:towerInfo.clearR+5});
-    function canPlace(wx,wz,minDist){
-        return !occupied.some(o=>{ const dx=wx-o.x,dz=wz-o.z; return dx*dx+dz*dz<(minDist+o.r)*(minDist+o.r); });
-    }
+    if(towerInfo) occupied.push({x:towerInfo.wx,z:towerInfo.wz,r:towerInfo.clearR+4});
+    function canPlace(wx,wz,minD){ return !occupied.some(o=>{ const dx=wx-o.x,dz=wz-o.z; return dx*dx+dz*dz<(minD+o.r)**2; }); }
     function occupy(wx,wz,rad){ occupied.push({x:wx,z:wz,r:rad}); }
 
     /* ARBRES */
-    const treeN=7+(r()*7|0),tpts=[];
+    const treeN=lod===0?7+(r()*7|0):4+(r()*4|0);
+    const tpts=[];
     for(let i=0;i<treeN;i++){
         let wx,wz,ok=false,tries=0;
-        do{
-            wx=oX+(r()-0.5)*CHUNK_SIZE*0.85; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
-            ok=canPlace(wx,wz,8)&&!tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});
+        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.85; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
+            ok=canPlace(wx,wz,8)&&!tpts.some(p=>{ const dx=p[0]-wx,dz=p[1]-wz; return dx*dx+dz*dz<16*16; });
         } while(!ok&&++tries<20);
         if(tries>=20) continue;
         tpts.push([wx,wz]); occupy(wx,wz,8);
-        const gy=findY(wx,wz),h=28+r()*18,tr=1.4+r()*1.0,trunkH=h*(0.28+r()*0.08),tgr=new THREE.Group();
+        const gy=findY(wx,wz),h=28+r()*18,tr=1.4+r()*1.0,trunkH=h*(0.28+r()*0.08);
+        const tgr=new THREE.Group();
         const trunk=new THREE.Mesh(new THREE.CylinderGeometry(tr*0.55,tr*1.4,trunkH+6,9),MAT.trunk);
         trunk.position.y=trunkH/2-3; trunk.castShadow=true; tgr.add(trunk);
-        const layers=9+(r()*5|0),foliageH=h-trunkH;
+        const layers=lod===0?9+(r()*5|0):5+(r()*3|0), foliageH=h-trunkH;
         for(let li=0;li<layers;li++){
-            const ratio=li/(layers-1),coneY=trunkH+ratio*foliageH*0.90,radius=tr*4.5*(1-ratio*0.72)+1.5,coneH=(foliageH/layers)*2.2;
+            const ratio=li/(layers-1),coneY=trunkH+ratio*foliageH*0.90;
+            const radius=tr*4.5*(1-ratio*0.72)+1.5,coneH=(foliageH/layers)*2.2;
             const cone=new THREE.Mesh(new THREE.ConeGeometry(radius,coneH,8),CONE_MATS[(r()*3)|0]);
-            cone.position.y=coneY; tgr.add(cone);
+            cone.position.y=coneY;
+            // Ombres feuilles activées
+            cone.castShadow=true; cone.receiveShadow=true;
+            tgr.add(cone);
             windObjects.push({mesh:cone,phase:r()*10,speed:0.5,amp:0.012});
         }
         tgr.position.set(wx,gy,wz); grp.add(tgr);
-        lc.push({type:'cylinder',x:wx,y:gy,z:wz,r:tr*1.7,h:trunkH+6});
+        if(lod===0) lc.push({type:'cylinder',x:wx,y:gy,z:wz,r:tr*1.7,h:trunkH+6});
     }
 
-    /* ROCHERS */
-    for(let i=0,n=1+(r()*3|0);i<n;i++){
-        let wx,wz,tries=0;
-        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
-        if(tries>=15) continue;
-        const gy=findY(wx,wz),sx=1.0+r()*2.6,sy=sx*(0.5+r()*0.5),sz=1.0+r()*2.6;
-        const rock=new THREE.Mesh(GEO.rock,MAT.rock);
-        rock.scale.set(sx,sy,sz); rock.rotation.set((r()-0.5)*0.4,r()*Math.PI*2,(r()-0.5)*0.4);
-        rock.position.set(wx,gy+sy*0.35,wz);
-        rock.castShadow=rock.receiveShadow=true; grp.add(rock);
-        lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
-        occupy(wx,wz,Math.max(sx,sz)*1.2);
-    }
+    if(lod===0){
+        /* ROCHERS */
+        for(let i=0,n=1+(r()*3|0);i<n;i++){
+            let wx,wz,tries=0;
+            do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
+            if(tries>=15) continue;
+            const gy=findY(wx,wz),sx=1.0+r()*2.6,sy=sx*(0.5+r()*0.5),sz=1.0+r()*2.6;
+            const rock=new THREE.Mesh(GEO.rock,MAT.rock);
+            rock.scale.set(sx,sy,sz); rock.rotation.set((r()-0.5)*0.4,r()*Math.PI*2,(r()-0.5)*0.4);
+            rock.position.set(wx,gy+sy*0.35,wz);
+            rock.castShadow=rock.receiveShadow=true; grp.add(rock);
+            lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
+            occupy(wx,wz,Math.max(sx,sz)*1.2);
+        }
 
-    /* FLEURS */
-    for(let i=0,n=25+(r()*50|0);i<n;i++){
-        let wx,wz,tries=0;
-        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
-        if(tries>=10) continue;
-        const gy=findY(wx,wz);
-        const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
-        const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
-        hd.position.set(wx,gy+0.65,wz); grp.add(hd);
-        occupy(wx,wz,0.8);
-    }
+        /* FLEURS */
+        for(let i=0,n=25+(r()*50|0);i<n;i++){
+            let wx,wz,tries=0;
+            do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
+            if(tries>=10) continue;
+            const gy=findY(wx,wz);
+            const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
+            const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
+            hd.position.set(wx,gy+0.65,wz); grp.add(hd);
+            occupy(wx,wz,0.8);
+        }
 
-    /* CHAMPIGNONS */
-    for(let i=0,n=1+(r()*4|0);i<n;i++){
-        let wx,wz,tries=0;
-        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
-        if(tries>=15) continue;
-        buildMushroom(wx,wz,findY(wx,wz),r,grp); occupy(wx,wz,1.5);
-        if(r()>0.5) for(let c=0,cn=2+(r()*3|0);c<cn;c++){
-            const ox=wx+(r()-0.5)*2.5,oz=wz+(r()-0.5)*2.5;
-            if(canPlace(ox,oz,1)){ buildMushroom(ox,oz,findY(ox,oz),r,grp); occupy(ox,oz,1); }
+        /* CHAMPIGNONS */
+        for(let i=0,n=1+(r()*4|0);i<n;i++){
+            let wx,wz,tries=0;
+            do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
+            if(tries>=15) continue;
+            buildMushroom(wx,wz,findY(wx,wz),r,grp); occupy(wx,wz,1.5);
+            if(r()>0.5) for(let c=0,cn=2+(r()*3|0);c<cn;c++){
+                const ox=wx+(r()-0.5)*2.5,oz=wz+(r()-0.5)*2.5;
+                if(canPlace(ox,oz,1)){ buildMushroom(ox,oz,findY(ox,oz),r,grp); occupy(ox,oz,1); }
+            }
+        }
+
+        /* LUCIOLES */
+        for(let i=0,n=2+(r()*6|0);i<n;i++){
+            const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88,wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
+            const fy=findY(wx,wz)+2+r()*4;
+            const m=new THREE.Mesh(GEO.ff,MAT.ff); m.position.set(wx,fy,wz); grp.add(m);
+            fireflyData.push({mesh:m,baseY:fy,phase:r()*10});
         }
     }
 
-    /* HERBE */
-    const gn=50+(r()*50|0);
-    const gm=new THREE.InstancedMesh(GEO.grass,MAT.grass,gn);
-    gm.frustumCulled=false;
-    const dm=new THREE.Object3D();
-    for(let i=0;i<gn;i++){
-        const wx=oX+(r()-0.5)*CHUNK_SIZE,wz=oZ+(r()-0.5)*CHUNK_SIZE;
-        dm.position.set(wx,findY(wx,wz),wz);
-        dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
-        gm.setMatrixAt(i,dm.matrix);
-    }
-    gm.instanceMatrix.needsUpdate=true; grp.add(gm);
-
-    /* LUCIOLES */
-    for(let i=0,n=2+(r()*6|0);i<n;i++){
-        const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88,wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
-        const fy=findY(wx,wz)+2+r()*4;
-        const m=new THREE.Mesh(GEO.ff,MAT.ff); m.position.set(wx,fy,wz); grp.add(m);
-        fireflyData.push({mesh:m,baseY:fy,phase:r()*10,ox:wx,oz:wz});
+    /* HERBE — LOD 0 et 1 */
+    if(lod<2){
+        const gn=lod===0?50+(r()*50|0):20+(r()*20|0);
+        const gm=new THREE.InstancedMesh(GEO.grass,MAT.grass,gn);
+        gm.frustumCulled=true;
+        const dm=new THREE.Object3D();
+        for(let i=0;i<gn;i++){
+            const wx=oX+(r()-0.5)*CHUNK_SIZE,wz=oZ+(r()-0.5)*CHUNK_SIZE;
+            dm.position.set(wx,findY(wx,wz),wz);
+            dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
+            gm.setMatrixAt(i,dm.matrix);
+        }
+        gm.instanceMatrix.needsUpdate=true; grp.add(gm);
     }
 
     /* FADE-IN */
@@ -576,7 +630,7 @@ function _buildChunk(cx,cz,key){
 
     globalColliders.push(...lc);
     scene.add(grp);
-    loadedChunks.set(key,{group:grp,localColliders:lc});
+    loadedChunks.set(key,{group:grp,localColliders:lc,lod});
     chunkFadeIn.set(key,{group:grp,alpha:0});
 }
 
@@ -584,9 +638,9 @@ function unloadChunk(cx,cz){
     const key=cx+','+cz,data=loadedChunks.get(key);
     if(!data){loadedChunks.delete(key);return;}
     scene.remove(data.group);
+    const sharedGeos=Object.values(GEO);
     data.group.traverse(obj=>{
         if(!obj.isMesh) return;
-        const sharedGeos=Object.values(GEO);
         if(obj.geometry&&!sharedGeos.includes(obj.geometry)) obj.geometry.dispose();
         const mats=Array.isArray(obj.material)?obj.material:[obj.material];
         mats.forEach(m=>{ if(m._bOp!==undefined) m.dispose(); });
@@ -605,8 +659,11 @@ function updateChunks(px,pz){
     if(cx===lastCX&&cz===lastCZ) return;
     lastCX=cx; lastCZ=cz;
     for(let dx=-CHUNK_RADIUS;dx<=CHUNK_RADIUS;dx++)
-        for(let dz=-CHUNK_RADIUS;dz<=CHUNK_RADIUS;dz++)
-            generateChunk(cx+dx,cz+dz);
+        for(let dz=-CHUNK_RADIUS;dz<=CHUNK_RADIUS;dz++){
+            const dist=Math.max(Math.abs(dx),Math.abs(dz));
+            const lod=dist<=1?0:dist<=2?1:2;
+            generateChunk(cx+dx,cz+dz,lod);
+        }
     for(const[key]of loadedChunks){
         const[kcx,kcz]=key.split(',').map(Number);
         if(Math.abs(kcx-cx)>CHUNK_RADIUS+1||Math.abs(kcz-cz)>CHUNK_RADIUS+1) unloadChunk(kcx,kcz);
@@ -683,21 +740,30 @@ function updateMovement(dt){
 const clock=new THREE.Clock();
 let elapsed=DAY_DURATION*0.25;
 updateChunks(0,0);
+
+const _tmp=new THREE.Vector3();
 function animate(){
     requestAnimationFrame(animate);
     const dt=Math.min(clock.getDelta(),0.05);
     elapsed+=dt;
-    for(const w of windObjects) w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
+    // Vent seulement les cônes proches
+    const cpx=camera.position.x,cpz=camera.position.z;
+    for(const w of windObjects){
+        w.mesh.getWorldPosition(_tmp);
+        const dx=_tmp.x-cpx,dz=_tmp.z-cpz;
+        if(dx*dx+dz*dz<5000) w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
+    }
     for(const f of fireflyData){
         f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5;
         f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008;
     }
     for(const[key,fd]of chunkFadeIn){
-        fd.alpha=Math.min(1,fd.alpha+dt*1.5);
-        fd.group.traverse(obj=>{
+        fd.alpha=Math.min(1,fd.alpha+dt*1.2);
+        const vis=Math.max(0,fd.alpha);
+        if(vis>0) fd.group.traverse(obj=>{
             if(!obj.isMesh)return;
             const mats=Array.isArray(obj.material)?obj.material:[obj.material];
-            for(const m of mats)if(m._bOp!==undefined)m.opacity=fd.alpha*m._bOp;
+            for(const m of mats)if(m._bOp!==undefined)m.opacity=vis*m._bOp;
         });
         if(fd.alpha>=1){
             fd.group.traverse(obj=>{
