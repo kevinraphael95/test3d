@@ -272,167 +272,89 @@ function chunkHasTower(cx,cz){
 
 /* ─── TOURS D'OBSERVATION ──────────────────────────────────────── */
 
-function buildTower(wx,wz,grp,lc){
-    const gy=findY(wx,wz);
-    const tg=new THREE.Group();
+function buildTower(wx, wz, grp, lc) {
+    const gy = findY(wx, wz);
+    const tg = new THREE.Group();
+    const pillarH = TOWER_H + 4;
 
-    const pillarH=TOWER_H+4;
-
-    // ── 4 PILIERS ────────────────────────────────────────
-    const pDef=[
-        {ox:-PLT_HALF,oz:-PLT_HALF,rb:0.65,rt:0.55},
-        {ox: PLT_HALF,oz:-PLT_HALF,rb:0.62,rt:0.52},
-        {ox: PLT_HALF,oz: PLT_HALF,rb:0.68,rt:0.58},
-        {ox:-PLT_HALF,oz: PLT_HALF,rb:0.60,rt:0.50},
+    // ── 4 PILIERS PRINCIPAUX ─────────────────────────────
+    const pDef = [
+        { ox: -PLT_HALF, oz: -PLT_HALF, rb: 0.65, rt: 0.55 },
+        { ox: PLT_HALF, oz: -PLT_HALF, rb: 0.62, rt: 0.52 },
+        { ox: PLT_HALF, oz: PLT_HALF, rb: 0.68, rt: 0.58 },
+        { ox: -PLT_HALF, oz: PLT_HALF, rb: 0.60, rt: 0.50 },
     ];
-    for(const p of pDef){
-        const mesh=new THREE.Mesh(new THREE.CylinderGeometry(p.rt,p.rb,pillarH,10),MAT.towLog);
-        mesh.position.set(p.ox,pillarH/2-4,p.oz);
-        mesh.castShadow=true; tg.add(mesh);
-        lc.push({type:'cylinder',x:wx+p.ox,y:gy-4,z:wz+p.oz,r:p.rb+0.15,h:pillarH});
+    for (const p of pDef) {
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(p.rt, p.rb, pillarH, 10), MAT.towLog);
+        mesh.position.set(p.ox, pillarH / 2 - 4, p.oz);
+        mesh.castShadow = true; tg.add(mesh);
+        lc.push({ type: 'cylinder', x: wx + p.ox, y: gy - 4, z: wz + p.oz, r: p.rb + 0.15, h: pillarH });
     }
 
-    // ── RENFORTS HORIZONTAUX ─────────────────────────────
-    const beamLen=PLT_HALF*2+0.5;
-    for(let y=6;y<TOWER_H-2;y+=7){
-        for(const oz of [-PLT_HALF,PLT_HALF]){
-            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,beamLen,7),MAT.towLog);
-            b.rotation.z=Math.PI/2; b.position.set(0,y,oz); tg.add(b);
-        }
-        for(const ox of [-PLT_HALF,PLT_HALF]){
-            const b=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,beamLen,7),MAT.towLog);
-            b.rotation.x=Math.PI/2; b.position.set(ox,y+0.4,0); tg.add(b);
-        }
+    // ── ÉCHELLE ──────────────────────────────────────────
+    const LADDER_W = 1.2, LADDER_Z = PLT_HALF + 0.3;
+    const RUNG_COUNT = Math.floor(TOWER_H / 0.8), RUNG_SPACING = TOWER_H / RUNG_COUNT;
+    for (let i = 1; i <= RUNG_COUNT; i++) {
+        const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, LADDER_W, 6), MAT.towLog);
+        rung.rotation.z = Math.PI / 2; rung.position.set(0, i * RUNG_SPACING, LADDER_Z);
+        tg.add(rung);
+    }
+    lc.push({ type: 'ladder', minX: wx - 1, maxX: wx + 1, minZ: wz + LADDER_Z - 0.5, maxZ: wz + LADDER_Z + 0.5, bottom: gy, top: gy + TOWER_H - 0.2 });
+
+    // ── PLANCHER ─────────────────────────────────────────
+    const floorW = PLT_HALF * 2 + 0.15;
+    for (let i = 0; i < 9; i++) {
+        const pz = -PLT_HALF + (i / 8) * PLT_HALF * 2;
+        const pl = new THREE.Mesh(GEO.towPlank, MAT.towPlank);
+        pl.scale.set(floorW, 1, 1); pl.position.set(0, TOWER_H, pz);
+        pl.receiveShadow = true; tg.add(pl);
     }
 
+    // ── GARDE-CORPS (Visuel + Collision BOX) ────────────
+    const railTop = TOWER_H + 1.15;
+    const gcSides = [
+        { cx: -PLT_HALF - 0.1, cz: 0, ry: Math.PI / 2 }, // Gauche
+        { cx: PLT_HALF + 0.1, cz: 0, ry: Math.PI / 2 },  // Droite
+        { cx: 0, cz: -PLT_HALF - 0.1, ry: 0 },          // Arrière
+    ];
 
-    // ── ÉCHELLE — collée à la face Z+ ────────────────────
-        const LADDER_W    = 1.2; 
-        const LADDER_Z    = PLT_HALF + 0.3;
-        const RUNG_COUNT  = Math.floor(TOWER_H / 0.8);
-        const RUNG_SPACING= TOWER_H / RUNG_COUNT;
-    
-        // Montants
-        const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
-        postL.position.set(-LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
-        tg.add(postL);
-    
-        const postR = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
-        postR.position.set(LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
-        tg.add(postR);
-    
-        // Barreaux
-        for(let i=1; i<=RUNG_COUNT; i++){
-            const ry = i * RUNG_SPACING;
-            const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, LADDER_W, 6), MAT.towLog);
-            rung.rotation.z = Math.PI / 2;
-            rung.position.set(0, ry, LADDER_Z);
-            tg.add(rung);
-        }
-    
-        // ZONE DE COLLISION ÉCHELLE (Ajustée pour transition douce)
+    for (const s of gcSides) {
+        // Visuel rail
+        const r = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, floorW, 5), MAT.towRail);
+        r.rotation.set(0, s.ry, Math.PI / 2); r.position.set(s.cx, railTop, s.cz);
+        tg.add(r);
+
+        // COLLISION BOX (Grand rectangle pour tout le côté)
         lc.push({
-            type: 'ladder',
-            minX: wx - LADDER_W * 0.6, 
-            maxX: wx + LADDER_W * 0.6,
-            minZ: wz + LADDER_Z - 0.4, 
-            maxZ: wz + LADDER_Z + 0.4,
-            bottom: gy,
-            top: gy + TOWER_H - 0.2 // S'arrête juste AVANT le haut pour lâcher le joueur
+            type: 'box',
+            x: wx + s.cx,
+            z: wz + s.cz,
+            w: s.ry === 0 ? floorW : 0.3,
+            d: s.ry === 0 ? 0.3 : floorW,
+            y: gy + TOWER_H,
+            h: 1.2
         });
-
-    // ── PLANCHER PLATEFORME ───────────────────────────────
-    const floorW=PLT_HALF*2+0.15;
-    for(let i=0;i<9;i++){
-        const t=i/8, pz=-PLT_HALF+t*PLT_HALF*2;
-        const pl=new THREE.Mesh(GEO.towPlank,MAT.towPlank);
-        pl.scale.set(floorW,1,1); pl.position.set(0,TOWER_H,pz);
-        pl.receiveShadow=true; tg.add(pl);
-    }
-    lc.push({type:'cylinder',x:wx,y:gy+TOWER_H-0.1,z:wz,r:PLT_HALF+0.5,h:0.4});
-
-    // Poutres soutien plancher
-    for(const oz of [-PLT_HALF*0.5,PLT_HALF*0.5]){
-        const sb=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,floorW+0.3,7),MAT.towLog);
-        sb.rotation.z=Math.PI/2; sb.position.set(0,TOWER_H-0.28,oz); tg.add(sb);
     }
 
-    // ── GARDE-CORPS plateforme ────────────────────────────
-        const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
-        const gcSides=[
-            // [0,           PLT_HALF+0.1, 0,         floorW], // Côté échelle (laissé ouvert)
-            [-PLT_HALF-0.1, 0,          Math.PI/2, floorW],
-            [ PLT_HALF+0.1, 0,          Math.PI/2, floorW],
-            [0,          -PLT_HALF-0.1, 0,         floorW],
-        ];
-    
-        for(const [cx,cz,ry,len] of gcSides){
-            // Visuel des barres horizontales
-            for(const rh of [railMid,railTop]){
-                const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
-                r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
-            }
-            // Visuel des barreaux verticaux
-            const nb=Math.ceil(len/0.62)+1;
-            for(let i=0;i<=nb;i++){
-                const t2=(i/nb-0.5)*len;
-                const bx=ry===0?cx+t2:cx, bz=ry===0?cz:cz+t2;
-                const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
-                bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
-            }
-    
-            // AJOUT DE LA COLLISION (Le mur invisible)
-            // On place 3 points de collision par rail pour boucher tout le long
-            for(let j=0; j<3; j++) {
-                const offset = (j/2 - 0.5) * len;
-                const colX = ry === 0 ? wx + cx + offset : wx + cx;
-                const colZ = ry === 0 ? wz + cz : wz + cz + offset;
-                
-                lc.push({
-                    type: 'cylinder',
-                    x: colX,
-                    y: gy + TOWER_H, 
-                    z: colZ,
-                    r: 0.5, // Rayon pour bloquer le joueur
-                    h: 1.5  // Hauteur du mur
-                });
-            }
-        }
-
-    // ── TOIT CARRÉ — porté par 4 petits piliers ──────────
-    const roofPillarH=5;
-    for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
-        const rp=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,roofPillarH,7),MAT.towLog);
-        rp.position.set(px,railTop+roofPillarH/2,pz); tg.add(rp);
+    // ── PILIERS DU TOIT (Ils partent du plancher maintenant) ──
+    const roofPillarH = 5.2; 
+    for (const [px, pz] of [[-PLT_HALF, -PLT_HALF], [PLT_HALF, -PLT_HALF], [PLT_HALF, PLT_HALF], [-PLT_HALF, PLT_HALF]]) {
+        const rp = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, roofPillarH, 7), MAT.towLog);
+        // On le place pour que sa base soit à TOWER_H (le niveau du sol de la plateforme)
+        rp.position.set(px, TOWER_H + roofPillarH / 2, pz);
+        tg.add(rp);
     }
 
-    // Toit carré = 4 pans inclinés
-    const roofBase=railTop+roofPillarH;
-    const roofH=4, roofHalf=PLT_HALF+1.0;
-    // Pan avant (Z+)
-    const panGeo=new THREE.BufferGeometry();
-    const verts=new Float32Array([
-        -roofHalf,0, roofHalf,
-         roofHalf,0, roofHalf,
-         0,       roofH, 0,
-    ]);
-    panGeo.setAttribute('position',new THREE.BufferAttribute(verts,3));
-    panGeo.computeVertexNormals();
-    for(const [rx,rz] of [[0,0],[Math.PI/2,0],[Math.PI,0],[Math.PI*1.5,0],[0,Math.PI/2],[0,Math.PI*1.5]]){
-        // on utilise ConeGeometry à 4 faces = toit pyramidal carré
-    }
-    // Toit pyramidal carré simplement avec ConeGeometry 4 segments
-    const roofMesh=new THREE.Mesh(
-        new THREE.ConeGeometry(roofHalf*Math.SQRT2, roofH, 4),
-        MAT.towLog
-    );
-    roofMesh.rotation.y=Math.PI/4; // aligner les coins avec la tour
-    roofMesh.position.set(0,roofBase+roofH*0.5,0);
-    roofMesh.castShadow=true; tg.add(roofMesh);
+    // ── TOIT ─────────────────────────────────────────────
+    const roofH = 4, roofHalf = PLT_HALF + 1.0;
+    const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(roofHalf * Math.SQRT2, roofH, 4), MAT.towLog);
+    roofMesh.rotation.y = Math.PI / 4;
+    roofMesh.position.set(0, TOWER_H + roofPillarH + roofH * 0.5 - 0.5, 0);
+    tg.add(roofMesh);
 
-    tg.position.set(wx,gy,wz);
+    tg.position.set(wx, gy, wz);
     grp.add(tg);
-    return {wx,wz,clearR:PLT_HALF+6};
+    return { wx, wz, clearR: PLT_HALF + 6 };
 }
 
 /* ─── CHAMPIGNONS ────────────────────────────────────── */
