@@ -270,93 +270,116 @@ function chunkHasTower(cx,cz){
 }
 
 
-/* ─── TOURS D'OBSERVATION ──────────────────────────────────────── */
+/* ─── TOURS D'OBSERVATION (OPTIMISÉE) ──────────────────────────────────────── */
 
 function buildTower(wx, wz, grp, lc) {
     const gy = findY(wx, wz);
     const tg = new THREE.Group();
     const pillarH = TOWER_H + 4;
-    const floorW = PLT_HALF * 2 + 0.2; // Défini ici pour éviter l'erreur
+    const floorW = PLT_HALF * 2 + 0.2;
 
-    // ── 4 PILIERS ────────────────────────────────────────
+    // ── 4 PILIERS
     const pDef = [
-        { ox: -PLT_HALF, oz: -PLT_HALF, rb: 0.65, rt: 0.55 },
-        { ox: PLT_HALF, oz: -PLT_HALF, rb: 0.62, rt: 0.52 },
-        { ox: PLT_HALF, oz: PLT_HALF, rb: 0.68, rt: 0.58 },
-        { ox: -PLT_HALF, oz: PLT_HALF, rb: 0.60, rt: 0.50 },
+        { ox: -PLT_HALF, oz: -PLT_HALF, rb: 0.65 },
+        { ox: PLT_HALF, oz: -PLT_HALF, rb: 0.62 },
+        { ox: PLT_HALF, oz: PLT_HALF, rb: 0.68 },
+        { ox: -PLT_HALF, oz: PLT_HALF, rb: 0.60 },
     ];
     for (const p of pDef) {
-        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(p.rt, p.rb, pillarH, 10), MAT.towLog);
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(p.rb-0.1, p.rb, pillarH, 8), MAT.towLog);
         mesh.position.set(p.ox, pillarH / 2 - 4, p.oz);
         mesh.castShadow = true; tg.add(mesh);
-        lc.push({ type: 'cylinder', x: wx + p.ox, y: gy - 4, z: wz + p.oz, r: p.rb + 0.15, h: pillarH });
+        lc.push({ type: 'cylinder', x: wx + p.ox, y: gy - 4, z: wz + p.oz, r: p.rb + 0.1, h: pillarH });
     }
 
-    // ── PLANCHER ─────────────────────────────────────────
-    const plankW = 0.6;
-    for (let x = -PLT_HALF; x <= PLT_HALF + 0.1; x += plankW) {
+    // ── PLANCHER & PALIER DE TRANSITION (Le "smooth")
+    for (let x = -PLT_HALF; x <= PLT_HALF + 0.1; x += 0.6) {
         const plank = new THREE.Mesh(GEO.towPlank, MAT.towPlank);
         plank.scale.x = floorW;
         plank.position.set(0, TOWER_H - 0.05, x);
         plank.receiveShadow = true; tg.add(plank);
     }
-    // Collision du sol de la plateforme
-    lc.push({ type: 'cylinder', x: wx, y: gy, z: wz, r: PLT_HALF * 1.4, h: TOWER_H });
+    // Petite avancée visuelle pour l'échelle
+    const landing = new THREE.Mesh(GEO.towPlank, MAT.towPlank);
+    landing.scale.set(1.4, 1, 0.8);
+    landing.position.set(0, TOWER_H - 0.05, PLT_HALF + 0.25);
+    tg.add(landing);
 
-    // ── ÉCHELLE ────────────────────
-    const LADDER_W = 1.2;
-    const LADDER_Z = PLT_HALF + 0.35;
+    // Collision du sol (Cylindre central)
+    lc.push({ type: 'cylinder', x: wx, y: gy, z: wz, r: PLT_HALF + 0.3, h: TOWER_H });
+
+    // ── ÉCHELLE
+    const LADDER_Z = PLT_HALF + 0.6;
     const RUNG_COUNT = Math.floor(TOWER_H / 0.8);
     const RUNG_SPACING = TOWER_H / RUNG_COUNT;
-
     for (let i = 1; i <= RUNG_COUNT; i++) {
-        const ry = i * RUNG_SPACING;
-        const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, LADDER_W, 6), MAT.towLog);
+        const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 5), MAT.towLog);
         rung.rotation.z = Math.PI / 2;
-        rung.position.set(0, ry, LADDER_Z);
+        rung.position.set(0, i * RUNG_SPACING, LADDER_Z);
         tg.add(rung);
     }
-    // Zone de détection de l'échelle
+    
+    // Détection échelle
     lc.push({
         type: 'ladder',
-        minX: wx - LADDER_W, maxX: wx + LADDER_W,
-        minZ: wz + LADDER_Z - 0.8, maxZ: wz + LADDER_Z + 0.8,
-        bottom: gy, top: gy + TOWER_H + 0.5
+        minX: wx - 0.8, maxX: wx + 0.8,
+        minZ: wz + LADDER_Z - 0.5, maxZ: wz + LADDER_Z + 0.5,
+        bottom: gy, top: gy + TOWER_H + 0.6 // On dépasse un peu pour sortir
     });
 
-    // ── GARDE-CORPS (Ouvert côté échelle Z+) ──
-    const railTop = TOWER_H + 1.15, railMid = TOWER_H + 0.58;
-    const gcSides = [
-        { cx: 0, cz: -PLT_HALF - 0.1, ry: 0, len: floorW, open: false }, // Fond
-        { cx: -PLT_HALF - 0.1, cz: 0, ry: Math.PI / 2, len: floorW, open: false }, // Gauche
-        { cx: PLT_HALF + 0.1, cz: 0, ry: Math.PI / 2, len: floorW, open: false }, // Droite
-    ];
+    // ── GARDE-CORPS & COLLISIONS CARRÉES (AABB)
+    const railTop = TOWER_H + 1.1, railMid = TOWER_H + 0.5;
+    
+    // Barrière Arrière (Z-)
+    const bBack = new THREE.Mesh(GEO.towPlank, MAT.towRail);
+    bBack.scale.set(floorW, 0.3, 0.2); bBack.position.set(0, railTop, -PLT_HALF - 0.1); tg.add(bBack);
+    lc.push({ type: 'aabb', minX: wx-floorW/2, maxX: wx+floorW/2, minZ: wz-PLT_HALF-0.2, maxZ: wz-PLT_HALF, minY: gy+TOWER_H, maxY: gy+TOWER_H+2 });
 
-    for (const s of gcSides) {
-        for (const rh of [railMid, railTop]) {
-            const r = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, s.len, 5), MAT.towRail);
-            r.rotation.set(0, s.ry, Math.PI / 2); r.position.set(s.cx, rh, s.cz); tg.add(r);
-        }
-        // Collision barrières
-        lc.push({ type: 'cylinder', x: wx + s.cx, y: gy + TOWER_H, z: wz + s.cz, r: 0.25, h: 1.5 });
-    }
+    // Barrière Gauche (X-)
+    const bLeft = new THREE.Mesh(GEO.towPlank, MAT.towRail);
+    bLeft.scale.set(0.2, 0.3, floorW); bLeft.position.set(-PLT_HALF - 0.1, railTop, 0); tg.add(bLeft);
+    lc.push({ type: 'aabb', minX: wx-PLT_HALF-0.2, maxX: wx-PLT_HALF, minZ: wz-floorW/2, maxZ: wz+floorW/2, minY: gy+TOWER_H, maxY: gy+TOWER_H+2 });
 
-    // ── TOIT ─────────────────────────────────────────────
+    // Barrière Droite (X+)
+    const bRight = new THREE.Mesh(GEO.towPlank, MAT.towRail);
+    bRight.scale.set(0.2, 0.3, floorW); bRight.position.set(PLT_HALF + 0.1, railTop, 0); tg.add(bRight);
+    lc.push({ type: 'aabb', minX: wx+PLT_HALF, maxX: wx+PLT_HALF+0.2, minZ: wz-floorW/2, maxZ: wz+floorW/2, minY: gy+TOWER_H, maxY: gy+TOWER_H+2 });
+
+    // ── TOIT
     const roofPillarH = 5;
     for (const [px, pz] of [[-PLT_HALF, -PLT_HALF], [PLT_HALF, -PLT_HALF], [PLT_HALF, PLT_HALF], [-PLT_HALF, PLT_HALF]]) {
-        const rp = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, roofPillarH, 7), MAT.towLog);
+        const rp = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, roofPillarH, 5), MAT.towLog);
         rp.position.set(px, railTop + roofPillarH / 2, pz); tg.add(rp);
     }
-    const roofH = 4, roofHalf = PLT_HALF + 1.0;
-    const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(roofHalf * Math.SQRT2, roofH, 4), MAT.towLog);
+    const roofMesh = new THREE.Mesh(new THREE.ConeGeometry((PLT_HALF + 1) * 1.41, 4, 4), MAT.towLog);
     roofMesh.rotation.y = Math.PI / 4;
-    roofMesh.position.set(0, railTop + roofPillarH + roofH * 0.5, 0);
-    roofMesh.castShadow = true; tg.add(roofMesh);
+    roofMesh.position.set(0, railTop + roofPillarH + 2, 0);
+    tg.add(roofMesh);
 
     tg.position.set(wx, gy, wz);
     grp.add(tg);
-    return { wx, wz, clearR: PLT_HALF + 6 };
+    return { wx, wz, clearR: PLT_HALF + 5 };
 }
+
+/* ─── AJOUT DANS LA PHYSIQUE (resolveColliders) ─── */
+// Ajoute ce bloc dans ta fonction resolveColliders pour gérer les AABB :
+
+/*
+if (c.type === 'aabb') {
+    if (nx + PLAYER_R > c.minX && nx - PLAYER_R < c.maxX &&
+        nz + PLAYER_R > c.minZ && nz - PLAYER_R < c.maxZ &&
+        ny > c.minY && (ny - PLAYER_H) < c.maxY) {
+        // Collision simple : on repousse vers l'extérieur de la boîte
+        const dx1 = Math.abs(nx - c.minX), dx2 = Math.abs(nx - c.maxX);
+        const dz1 = Math.abs(nz - c.minZ), dz2 = Math.abs(nz - c.maxZ);
+        const min = Math.min(dx1, dx2, dz1, dz2);
+        if (min === dx1) nx = c.minX - PLAYER_R;
+        else if (min === dx2) nx = c.maxX + PLAYER_R;
+        else if (min === dz1) nz = c.minZ - PLAYER_R;
+        else nz = c.maxZ + PLAYER_R;
+    }
+}
+*/
 
 /* ─── CHAMPIGNONS ────────────────────────────────────── */
 function buildMushroom(wx,wz,gy,r,grp){
