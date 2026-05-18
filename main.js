@@ -637,50 +637,65 @@ addEventListener('keyup',e=>{
 const _fwd=new THREE.Vector3(),_right=new THREE.Vector3();
 function updateMovement(dt) {
     const run = keys.shift && (keys.z || keys.s || keys.q || keys.d);
+    
+    // Direction du regard (sans l'axe Y pour le mouvement au sol)
     _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
     _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-    _fwd.y = 0; _fwd.normalize(); _right.y = 0; _right.normalize();
+    _fwd.y = 0; _fwd.normalize(); 
+    _right.y = 0; _right.normalize();
 
-    const check = resolveColliders(camera.position.x, camera.position.y, camera.position.z);
+    // Résolution des collisions avant déplacement
+    let check = resolveColliders(camera.position.x, camera.position.y, camera.position.z);
 
     if (check.isOnLadder) {
-        velocity.set(0, 0, 0); jumpVel = 0; grounded = true; smoothGroundY = null;
+        // Logique de l'échelle
+        velocity.set(0, 0, 0); 
+        jumpVel = 0; 
+        grounded = true; 
+        smoothGroundY = null;
         const climbSpeed = 0.22;
         if (keys.z) camera.position.y += climbSpeed;
         if (keys.s) camera.position.y -= climbSpeed;
-        if (keys.z && camera.position.y > (TOWER_H + PLAYER_H - 0.6)) camera.position.addScaledVector(_fwd, 0.15);
+        // Aide à sortir de l'échelle en haut
+        if (keys.z && camera.position.y > (TOWER_H + PLAYER_H - 1)) camera.position.addScaledVector(_fwd, 0.1);
         if (keys.q) camera.position.addScaledVector(_right, -0.05);
         if (keys.d) camera.position.addScaledVector(_right, 0.05);
     } else {
-        const slope = 1 - Math.abs(terrainNormal(camera.position.x, camera.position.z).y);
-        const accel = (run ? 0.07 : 0.035) * (1 - slope * 0.5);
+        // Mouvement normal au sol ou en l'air
+        const accel = (run ? 0.07 : 0.035);
         if (keys.z) velocity.addScaledVector(_fwd, accel);
         if (keys.s) velocity.addScaledVector(_fwd, -accel);
         if (keys.q) velocity.addScaledVector(_right, -accel);
         if (keys.d) velocity.addScaledVector(_right, accel);
-        velocity.multiplyScalar(0.88);
+        velocity.multiplyScalar(0.88); // Friction
 
-        let nx = camera.position.x + velocity.x, ny = camera.position.y, nz = camera.position.z + velocity.z;
-        jumpVel = Math.max(jumpVel - 0.016, -1.2); ny += jumpVel;
+        let nx = camera.position.x + velocity.x;
+        let ny = camera.position.y + jumpVel;
+        let nz = camera.position.z + velocity.z;
 
-        const moveRes = resolveColliders(nx, ny, nz);
-        nx = moveRes.x; ny = moveRes.y; nz = moveRes.z;
+        // Gravité
+        jumpVel -= 0.015;
 
-        const tgy = findY(nx, nz) + PLAYER_H;
-        if (ny <= tgy || moveRes.onTop) {
-            const targetY = moveRes.onTop ? ny : tgy;
-            if (jumpVel <= 0) {
-                if (smoothGroundY === null) smoothGroundY = ny;
-                smoothGroundY += (targetY - smoothGroundY) * 0.25;
-                ny = smoothGroundY; jumpVel = 0; grounded = true;
-            }
-        } else { smoothGroundY = null; grounded = false; }
+        // Application de la physique
+        let res = resolveColliders(nx, ny, nz);
+        nx = res.x; ny = res.y; nz = res.z;
+
+        // Hauteur du sol (Terrain)
+        const gy = findY(nx, nz) + PLAYER_H;
+        if (ny <= gy) {
+            ny = gy;
+            jumpVel = 0;
+            grounded = true;
+        } else {
+            grounded = res.onTop;
+        }
+
         camera.position.set(nx, ny, nz);
     }
     updateChunks(camera.position.x, camera.position.z);
 }
 
-/* ─── ANIMATION LOOP ─────────────────────────────────── */
+/* ─── BOUCLE D'ANIMATION ──────────────────────────────── */
 const clock = new THREE.Clock();
 let elapsed = DAY_DURATION * 0.25;
 
@@ -692,12 +707,14 @@ function animate() {
     updateDayNight(elapsed);
     updateMovement(dt);
 
+    // Animations environnementales
     for (const w of windObjects) w.mesh.rotation.z = Math.sin(elapsed * w.speed + w.phase) * w.amp;
     for (const f of fireflyData) {
         f.mesh.position.y = f.baseY + Math.sin(elapsed + f.phase) * 0.5;
-        f.mesh.position.x = f.ox + Math.cos(elapsed * 0.3 + f.phase) * 0.8;
+        f.mesh.position.x = f.ox + Math.cos(elapsed * 0.3 + f.phase) * 0.5;
     }
 
+    // Gestion du Fade-in des chunks
     for (const [key, fd] of chunkFadeIn) {
         fd.alpha = Math.min(1, fd.alpha + dt * 1.5);
         fd.group.traverse(obj => {
@@ -710,6 +727,14 @@ function animate() {
 
     renderer.render(scene, camera);
 }
+
+// Redimensionnement
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
 animate();
 
 window.addEventListener('resize', () => {
