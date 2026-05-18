@@ -630,9 +630,10 @@ function updateMovement(dt){
         const climbSpeed=0.18;
         if(keys.z) camera.position.y+=climbSpeed;
         if(keys.s){
-      const minY = findY(camera.position.x, camera.position.z) + PLAYER_H;
-      camera.position.y = Math.max(camera.position.y - climbSpeed, minY);
-  }
+            const minY = findY(camera.position.x, camera.position.z) + PLAYER_H;
+            camera.position.y = Math.max(camera.position.y - climbSpeed, minY);
+            if(camera.position.y <= minY) camera.position.z -= 1.0;
+        }
         if(keys.q) camera.position.addScaledVector(_right,-0.05);
         if(keys.d) camera.position.addScaledVector(_right,0.05);
     } else {
