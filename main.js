@@ -343,8 +343,8 @@ function buildTower(wx,wz,grp,lc){
             cx: wx + s.cx,
             cz: wz + s.cz,
             // Demi-dimensions selon orientation
-            hw: s.ry===0 ? s.len*0.5+PLAYER_R : 0.3, // demi-largeur X
-            hd: s.ry===0 ? 0.3 : s.len*0.5+PLAYER_R, // demi-largeur Z
+            hw: s.ry===0 ? s.len*0.5+PLAYER_R : 0.6,
+            hd: s.ry===0 ? 0.6 : s.len*0.5+PLAYER_R,
             bottom: gy+TOWER_H-0.1,
             top:    gy+TOWER_H+1.6,
         });
