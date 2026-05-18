@@ -312,15 +312,14 @@ function buildTower(wx,wz,grp,lc){
         const RUNG_COUNT  = Math.floor(TOWER_H / 0.8);
         const RUNG_SPACING= TOWER_H / RUNG_COUNT;
     
-        // Montant gauche
+        // Montants
         const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
         postL.position.set(-LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
-        postL.castShadow = true; tg.add(postL);
+        tg.add(postL);
     
-        // Montant droit
         const postR = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
         postR.position.set(LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
-        postR.castShadow = true; tg.add(postR);
+        tg.add(postR);
     
         // Barreaux
         for(let i=1; i<=RUNG_COUNT; i++){
@@ -331,15 +330,15 @@ function buildTower(wx,wz,grp,lc){
             tg.add(rung);
         }
     
-        // ZONE DE COLLISION ÉCHELLE (Rectangle non-bloquant)
+        // ZONE DE COLLISION ÉCHELLE (Ajustée pour transition douce)
         lc.push({
             type: 'ladder',
-            minX: wx - LADDER_W, 
-            maxX: wx + LADDER_W,
-            minZ: wz + LADDER_Z - 0.7, 
-            maxZ: wz + LADDER_Z + 0.7,
+            minX: wx - LADDER_W * 0.6, 
+            maxX: wx + LADDER_W * 0.6,
+            minZ: wz + LADDER_Z - 0.4, 
+            maxZ: wz + LADDER_Z + 0.4,
             bottom: gy,
-            top: gy + TOWER_H + 1.5
+            top: gy + TOWER_H - 0.2 // S'arrête juste AVANT le haut pour lâcher le joueur
         });
 
     // ── PLANCHER PLATEFORME ───────────────────────────────
@@ -358,7 +357,6 @@ function buildTower(wx,wz,grp,lc){
         sb.rotation.z=Math.PI/2; sb.position.set(0,TOWER_H-0.28,oz); tg.add(sb);
     }
 
-    // ── GARDE-CORPS plateforme ────────────────────────────
     // ── GARDE-CORPS plateforme ────────────────────────────
         const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
         const gcSides=[
