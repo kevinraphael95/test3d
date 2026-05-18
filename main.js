@@ -359,27 +359,30 @@ function buildTower(wx,wz,grp,lc){
     }
 
     // ── GARDE-CORPS plateforme ────────────────────────────
-    const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
-    const gcSides=[
-        [0,           PLT_HALF+0.1, 0,         floorW],
-        [-PLT_HALF-0.1, 0,          Math.PI/2, floorW],
-        [ PLT_HALF+0.1, 0,          Math.PI/2, floorW],
-        [0,          -PLT_HALF-0.1, 0,         floorW],
-    ];
-    for(const [cx,cz,ry,len] of gcSides){
-        for(const rh of [railMid,railTop]){
-            const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
-            r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
+    // ── GARDE-CORPS plateforme ────────────────────────────
+        const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
+        const gcSides=[
+            // [0,           PLT_HALF+0.1, 0,         floorW], // <--- CETTE LIGNE EST SUPPRIMÉE (Côté échelle)
+            [-PLT_HALF-0.1, 0,          Math.PI/2, floorW],
+            [ PLT_HALF+0.1, 0,          Math.PI/2, floorW],
+            [0,          -PLT_HALF-0.1, 0,         floorW],
+        ];
+  
+        for(const [cx,cz,ry,len] of gcSides){
+            for(const rh of [railMid,railTop]){
+                const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
+                r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
+            }
+            const nb=Math.ceil(len/0.62)+1;
+            for(let i=0;i<=nb;i++){
+                const t2=(i/nb-0.5)*len;
+                const bx=ry===0?cx+t2:cx, bz=ry===0?cz:cz+t2;
+                const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
+                bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
+            }
+            // Collision des barrières
+            lc.push({type:'cylinder',x:wx+cx,y:gy+TOWER_H,z:wz+cz,r:0.2,h:1.4});
         }
-        const nb=Math.ceil(len/0.62)+1;
-        for(let i=0;i<=nb;i++){
-            const t2=(i/nb-0.5)*len;
-            const bx=ry===0?cx+t2:cx, bz=ry===0?cz:cz+t2;
-            const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
-            bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
-        }
-        lc.push({type:'cylinder',x:wx+cx,y:gy+TOWER_H,z:wz+cz,r:0.2,h:1.4});
-    }
     for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
         const post=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,railTop-TOWER_H+0.1,6),MAT.towRail);
         post.position.set(px,TOWER_H+(railTop-TOWER_H)/2,pz); tg.add(post);
