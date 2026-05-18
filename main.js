@@ -632,7 +632,15 @@ function updateMovement(dt){
         if(keys.s){
             const minY = findY(camera.position.x, camera.position.z) + PLAYER_H;
             camera.position.y = Math.max(camera.position.y - climbSpeed, minY);
-            if(camera.position.y <= minY) camera.position.z -= 1.0;
+            if(camera.position.y <= minY){
+                // Trouver l'échelle la plus proche et pousser le joueur loin d'elle
+                const ladder = globalColliders.find(c=>c.type==='ladder');
+                if(ladder){
+                    const midZ = (ladder.minZ + ladder.maxZ) * 0.5;
+                    const dir = camera.position.z > midZ ? 1 : -1;
+                    camera.position.z += dir * 1.2;
+                }
+            }
         }
         if(keys.q) camera.position.addScaledVector(_right,-0.05);
         if(keys.d) camera.position.addScaledVector(_right,0.05);
