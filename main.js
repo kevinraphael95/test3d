@@ -221,61 +221,37 @@ const GEO={
     mushStem: new THREE.CylinderGeometry(0.1,0.12,0.4,6),
     mushCap:  new THREE.SphereGeometry(0.5,8,5,0,Math.PI*2,0,Math.PI*0.55),
     mushSpot: new THREE.SphereGeometry(0.07,4,4),
-    // Tour — unités de base scalées
-    towLogV:  new THREE.CylinderGeometry(0.55,0.65,1,9),  // tronc vertical, scale Y
-    towLogH:  new THREE.CylinderGeometry(0.16,0.16,1,7),  // poutre ronde, scale X ou Z
-    towPlank: new THREE.BoxGeometry(1,0.18,0.65),          // planche/marche, scale X
-    towRailH: new THREE.CylinderGeometry(0.07,0.07,1,5),  // rail horiz, scale X
-    towBarV:  new THREE.CylinderGeometry(0.05,0.05,1.15,5), // barreau vertical
+    towPlank: new THREE.BoxGeometry(1,0.18,0.65),
+    towBarV:  new THREE.CylinderGeometry(0.05,0.05,1.15,5),
 };
 
 /* ─── GLOBAUX ────────────────────────────────────────── */
 const windObjects=[], fireflyData=[], globalColliders=[];
 
-/* ─────────────────────────────────────────────────────────
-   TOUR D'OBSERVATION
-   - 4 gros piliers en troncs (rayon ~0.55-0.65), aspect bois brut
-   - Renforts en logs ronds horizontaux
-   - Escalier zigzag sur face Z- (8 volées de 8 marches)
-   - Plateforme 5×5u à TOWER_H, plancher en planches
-   - Garde-corps 3 côtés + ouverture côté escalier
-   - Toit conique
-───────────────────────────────────────────────────────── */
-const TOWER_H  = 40;  // hauteur plancher plateforme
-const PLT_HALF = 2.6; // demi-largeur plateforme (~5.2u)
+/* ─── TOUR ───────────────────────────────────────────── */
+const TOWER_H=40, PLT_HALF=2.6;
 
-// Fréquence : une tour par cellule 5×5 de chunks = ~400u
-// Spawn : (22,22) dans chunk (0,0)
 function chunkHasTower(cx,cz){
     if(cx===0&&cz===0) return true;
-    // Cellule 5×5
-    const cellX=Math.floor(cx/5), cellZ=Math.floor(cz/5);
-    if(cellX===0&&cellZ===0) return false; // cellule spawn déjà gérée
-    // Hash du chunk courant
+    const cellX=Math.floor(cx/5),cellZ=Math.floor(cz/5);
+    if(cellX===0&&cellZ===0) return false;
     let h=(cx*374761393+cz*668265263)^0xdeadbeef;
     h=Math.imul(h^(h>>>16),0x45d9f3b); h^=h>>>16;
     const val=(h>>>0)/0xffffffff;
-    // Vrai seulement si ce chunk a le hash max dans sa cellule 5×5
-    for(let dx=-4;dx<=4;dx++){
-        for(let dz=-4;dz<=4;dz++){
-            if(dx===0&&dz===0) continue;
-            const nx=cx+dx,nz=cz+dz;
-            if(Math.floor(nx/5)!==cellX||Math.floor(nz/5)!==cellZ) continue;
-            let h2=(nx*374761393+nz*668265263)^0xdeadbeef;
-            h2=Math.imul(h2^(h2>>>16),0x45d9f3b); h2^=h2>>>16;
-            if((h2>>>0)/0xffffffff>val) return false;
-        }
+    for(let dx=-4;dx<=4;dx++) for(let dz=-4;dz<=4;dz++){
+        if(dx===0&&dz===0) continue;
+        const nx=cx+dx,nz=cz+dz;
+        if(Math.floor(nx/5)!==cellX||Math.floor(nz/5)!==cellZ) continue;
+        let h2=(nx*374761393+nz*668265263)^0xdeadbeef;
+        h2=Math.imul(h2^(h2>>>16),0x45d9f3b); h2^=h2>>>16;
+        if((h2>>>0)/0xffffffff>val) return false;
     }
     return true;
 }
 
-
-/* ─── TOURS D'OBSERVATION ──────────────────────────────────────── */
-
 function buildTower(wx,wz,grp,lc){
     const gy=findY(wx,wz);
     const tg=new THREE.Group();
-
     const pillarH=TOWER_H+4;
 
     // ── 4 PILIERS ────────────────────────────────────────
@@ -305,41 +281,20 @@ function buildTower(wx,wz,grp,lc){
         }
     }
 
-
-    // ── ÉCHELLE — collée à la face Z+ ────────────────────
-        const LADDER_W    = 1.2; 
-        const LADDER_Z    = PLT_HALF + 0.3;
-        const RUNG_COUNT  = Math.floor(TOWER_H / 0.8);
-        const RUNG_SPACING= TOWER_H / RUNG_COUNT;
-    
-        // Montants
-        const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
-        postL.position.set(-LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
-        tg.add(postL);
-    
-        const postR = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
-        postR.position.set(LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
-        tg.add(postR);
-    
-        // Barreaux
-        for(let i=1; i<=RUNG_COUNT; i++){
-            const ry = i * RUNG_SPACING;
-            const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, LADDER_W, 6), MAT.towLog);
-            rung.rotation.z = Math.PI / 2;
-            rung.position.set(0, ry, LADDER_Z);
-            tg.add(rung);
-        }
-    
-        // ZONE DE COLLISION ÉCHELLE (Ajustée pour transition douce)
-        lc.push({
-            type: 'ladder',
-            minX: wx - LADDER_W * 0.6, 
-            maxX: wx + LADDER_W * 0.6,
-            minZ: wz + LADDER_Z - 0.4, 
-            maxZ: wz + LADDER_Z + 0.4,
-            bottom: gy,
-            top: gy + TOWER_H - 0.2 // S'arrête juste AVANT le haut pour lâcher le joueur
-        });
+    // ── ÉCHELLE ───────────────────────────────────────────
+    const LADDER_W=1.2, LADDER_Z=PLT_HALF+0.3;
+    const RUNG_COUNT=Math.floor(TOWER_H/0.8);
+    const RUNG_SPACING=TOWER_H/RUNG_COUNT;
+    const postL=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,TOWER_H+0.5,7),MAT.towLog);
+    postL.position.set(-LADDER_W*0.5,TOWER_H*0.5,LADDER_Z); tg.add(postL);
+    const postR=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,TOWER_H+0.5,7),MAT.towLog);
+    postR.position.set(LADDER_W*0.5,TOWER_H*0.5,LADDER_Z); tg.add(postR);
+    for(let i=1;i<=RUNG_COUNT;i++){
+        const ry=i*RUNG_SPACING;
+        const rung=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,LADDER_W,6),MAT.towLog);
+        rung.rotation.z=Math.PI/2; rung.position.set(0,ry,LADDER_Z); tg.add(rung);
+    }
+    lc.push({type:'ladder',minX:wx-LADDER_W*0.6,maxX:wx+LADDER_W*0.6,minZ:wz+LADDER_Z-0.4,maxZ:wz+LADDER_Z+0.4,bottom:gy,top:gy+TOWER_H-0.2});
 
     // ── PLANCHER PLATEFORME ───────────────────────────────
     const floorW=PLT_HALF*2+0.15;
@@ -351,88 +306,76 @@ function buildTower(wx,wz,grp,lc){
     }
     lc.push({type:'cylinder',x:wx,y:gy+TOWER_H-0.1,z:wz,r:PLT_HALF+0.5,h:0.4});
 
-    // Poutres soutien plancher
     for(const oz of [-PLT_HALF*0.5,PLT_HALF*0.5]){
         const sb=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,floorW+0.3,7),MAT.towLog);
         sb.rotation.z=Math.PI/2; sb.position.set(0,TOWER_H-0.28,oz); tg.add(sb);
     }
 
     // ── GARDE-CORPS plateforme ────────────────────────────
-        const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
-        const gcSides=[
-            // [0,           PLT_HALF+0.1, 0,         floorW], // Côté échelle (laissé ouvert)
-            [-PLT_HALF-0.1, 0,          Math.PI/2, floorW],
-            [ PLT_HALF+0.1, 0,          Math.PI/2, floorW],
-            [0,          -PLT_HALF-0.1, 0,         floorW],
-        ];
-    
-        for(const [cx,cz,ry,len] of gcSides){
-            // Visuel des barres horizontales
-            for(const rh of [railMid,railTop]){
-                const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
-                r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
-            }
-            // Visuel des barreaux verticaux
-            const nb=Math.ceil(len/0.62)+1;
-            for(let i=0;i<=nb;i++){
-                const t2=(i/nb-0.5)*len;
-                const bx=ry===0?cx+t2:cx, bz=ry===0?cz:cz+t2;
-                const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
-                bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
-            }
-    
-            // AJOUT DE LA COLLISION (Le mur invisible)
-            // On place 3 points de collision par rail pour boucher tout le long
-            for(let j=0; j<3; j++) {
-                const offset = (j/2 - 0.5) * len;
-                const colX = ry === 0 ? wx + cx + offset : wx + cx;
-                const colZ = ry === 0 ? wz + cz : wz + cz + offset;
-                
-                lc.push({
-                    type: 'cylinder',
-                    x: colX,
-                    y: gy + TOWER_H, 
-                    z: colZ,
-                    r: 0.5, // Rayon pour bloquer le joueur
-                    h: 1.5  // Hauteur du mur
-                });
-            }
+    const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
+
+    // Les 3 côtés fermés (le côté échelle = Z+ est ouvert)
+    const gcSides=[
+        { cx:0,          cz:-PLT_HALF-0.1, ry:0,         len:floorW }, // face Z-
+        { cx:-PLT_HALF-0.1, cz:0,          ry:Math.PI/2, len:floorW }, // face X-
+        { cx: PLT_HALF+0.1, cz:0,          ry:Math.PI/2, len:floorW }, // face X+
+    ];
+
+    for(const s of gcSides){
+        // Visuels
+        for(const rh of [railMid,railTop]){
+            const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,s.len,5),MAT.towRail);
+            r.rotation.set(0,s.ry,Math.PI/2); r.position.set(s.cx,rh,s.cz); tg.add(r);
+        }
+        const nb=Math.ceil(s.len/0.62)+1;
+        for(let i=0;i<=nb;i++){
+            const t=(i/nb-0.5)*s.len;
+            const bx=s.ry===0?s.cx+t:s.cx, bz=s.ry===0?s.cz:s.cz+t;
+            const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
+            bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
         }
 
-    // ── TOIT CARRÉ — porté par 4 petits piliers ──────────
-    const roofPillarH=5;
-    for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
-        const rp=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,roofPillarH,7),MAT.towLog);
-        rp.position.set(px,railTop+roofPillarH/2,pz); tg.add(rp);
+        // COLLISION — un seul collider mur par côté
+        // On utilise un collider de type 'wall' avec AABB + hauteur
+        lc.push({
+            type:'wall',
+            // Centre du mur en coords monde
+            cx: wx + s.cx,
+            cz: wz + s.cz,
+            // Demi-dimensions selon orientation
+            hw: s.ry===0 ? s.len*0.5+PLAYER_R : 0.3, // demi-largeur X
+            hd: s.ry===0 ? 0.3 : s.len*0.5+PLAYER_R, // demi-largeur Z
+            bottom: gy+TOWER_H-0.1,
+            top:    gy+TOWER_H+1.6,
+        });
     }
 
-    // Toit carré = 4 pans inclinés
-    const roofBase=railTop+roofPillarH;
-    const roofH=4, roofHalf=PLT_HALF+1.0;
-    // Pan avant (Z+)
-    const panGeo=new THREE.BufferGeometry();
-    const verts=new Float32Array([
-        -roofHalf,0, roofHalf,
-         roofHalf,0, roofHalf,
-         0,       roofH, 0,
-    ]);
-    panGeo.setAttribute('position',new THREE.BufferAttribute(verts,3));
-    panGeo.computeVertexNormals();
-    for(const [rx,rz] of [[0,0],[Math.PI/2,0],[Math.PI,0],[Math.PI*1.5,0],[0,Math.PI/2],[0,Math.PI*1.5]]){
-        // on utilise ConeGeometry à 4 faces = toit pyramidal carré
+    // Poteaux d'angle garde-corps
+    for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
+        const p=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,railTop-TOWER_H+0.1,6),MAT.towRail);
+        p.position.set(px,TOWER_H+(railTop-TOWER_H)/2,pz); tg.add(p);
     }
-    // Toit pyramidal carré simplement avec ConeGeometry 4 segments
-    const roofMesh=new THREE.Mesh(
-        new THREE.ConeGeometry(roofHalf*Math.SQRT2, roofH, 4),
-        MAT.towLog
-    );
-    roofMesh.rotation.y=Math.PI/4; // aligner les coins avec la tour
+
+    // ── PILIERS TOIT — partent du plancher (TOWER_H) vers le haut ──
+    // FIX : baseY = TOWER_H (plancher), pas railTop
+    const roofPillarH=5;
+    const roofPillarBase=TOWER_H; // ← anciennement railTop, abaissé au plancher
+    for(const [px,pz] of [[-PLT_HALF,-PLT_HALF],[PLT_HALF,-PLT_HALF],[PLT_HALF,PLT_HALF],[-PLT_HALF,PLT_HALF]]){
+        const rp=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,roofPillarH,7),MAT.towLog);
+        rp.position.set(px,roofPillarBase+roofPillarH/2,pz); tg.add(rp);
+    }
+
+    // Toit pyramidal carré
+    const roofBase=roofPillarBase+roofPillarH;
+    const roofH=4, roofHalf=PLT_HALF+1.0;
+    const roofMesh=new THREE.Mesh(new THREE.ConeGeometry(roofHalf*Math.SQRT2,roofH,4),MAT.towLog);
+    roofMesh.rotation.y=Math.PI/4;
     roofMesh.position.set(0,roofBase+roofH*0.5,0);
     roofMesh.castShadow=true; tg.add(roofMesh);
 
     tg.position.set(wx,gy,wz);
     grp.add(tg);
-    return {wx,wz,clearR:PLT_HALF+6};
+    return{wx,wz,clearR:PLT_HALF+6};
 }
 
 /* ─── CHAMPIGNONS ────────────────────────────────────── */
@@ -472,7 +415,6 @@ function _buildChunk(cx,cz,key){
     const r=seededRng(cx*73856093^cz*19349663);
     const grp=new THREE.Group(),lc=[];
 
-    /* SOL */
     const tgeo=new THREE.PlaneGeometry(CHUNK_SIZE,CHUNK_SIZE,CHUNK_SEGS,CHUNK_SEGS);
     const vp=tgeo.attributes.position.array;
     for(let i=0;i<vp.length;i+=3) vp[i+2]=fbm(oX+vp[i],oZ-vp[i+1]);
@@ -481,33 +423,23 @@ function _buildChunk(cx,cz,key){
     terr.rotation.x=-Math.PI/2; terr.position.set(oX,0,oZ); terr.receiveShadow=true;
     grp.add(terr);
 
-    /* TOUR */
     let towerInfo=null;
     if(chunkHasTower(cx,cz)){
         let twx,twz;
         if(cx===0&&cz===0){ twx=22; twz=22; }
-        else {
-            const rng2=seededRng(cx*19349663^cz*73856093);
-            twx=oX+(rng2()-0.5)*CHUNK_SIZE*0.5;
-            twz=oZ+(rng2()-0.5)*CHUNK_SIZE*0.5;
-        }
+        else{ const rng2=seededRng(cx*19349663^cz*73856093); twx=oX+(rng2()-0.5)*CHUNK_SIZE*0.5; twz=oZ+(rng2()-0.5)*CHUNK_SIZE*0.5; }
         towerInfo=buildTower(twx,twz,grp,lc);
     }
 
-    /* POINTS OCCUPÉS */
     const occupied=[];
     if(towerInfo) occupied.push({x:towerInfo.wx,z:towerInfo.wz,r:towerInfo.clearR+5});
-    function canPlace(wx,wz,minDist){
-        return !occupied.some(o=>{ const dx=wx-o.x,dz=wz-o.z; return dx*dx+dz*dz<(minDist+o.r)*(minDist+o.r); });
-    }
+    function canPlace(wx,wz,minDist){ return !occupied.some(o=>{ const dx=wx-o.x,dz=wz-o.z; return dx*dx+dz*dz<(minDist+o.r)*(minDist+o.r); }); }
     function occupy(wx,wz,rad){ occupied.push({x:wx,z:wz,r:rad}); }
 
-    /* ARBRES */
     const treeN=7+(r()*7|0),tpts=[];
     for(let i=0;i<treeN;i++){
         let wx,wz,ok=false,tries=0;
-        do{
-            wx=oX+(r()-0.5)*CHUNK_SIZE*0.85; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
+        do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.85; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.85;
             ok=canPlace(wx,wz,8)&&!tpts.some(p=>{const dx=p[0]-wx,dz=p[1]-wz;return dx*dx+dz*dz<16*16;});
         } while(!ok&&++tries<20);
         if(tries>=20) continue;
@@ -519,14 +451,13 @@ function _buildChunk(cx,cz,key){
         for(let li=0;li<layers;li++){
             const ratio=li/(layers-1),coneY=trunkH+ratio*foliageH*0.90,radius=tr*4.5*(1-ratio*0.72)+1.5,coneH=(foliageH/layers)*2.2;
             const cone=new THREE.Mesh(new THREE.ConeGeometry(radius,coneH,8),CONE_MATS[(r()*3)|0]);
-            cone.position.y=coneY; tgr.add(cone);
+            cone.position.y=coneY; cone.castShadow=true; tgr.add(cone);
             windObjects.push({mesh:cone,phase:r()*10,speed:0.5,amp:0.012});
         }
         tgr.position.set(wx,gy,wz); grp.add(tgr);
         lc.push({type:'cylinder',x:wx,y:gy,z:wz,r:tr*1.7,h:trunkH+6});
     }
 
-    /* ROCHERS */
     for(let i=0,n=1+(r()*3|0);i<n;i++){
         let wx,wz,tries=0;
         do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,3)&&++tries<15);
@@ -534,13 +465,11 @@ function _buildChunk(cx,cz,key){
         const gy=findY(wx,wz),sx=1.0+r()*2.6,sy=sx*(0.5+r()*0.5),sz=1.0+r()*2.6;
         const rock=new THREE.Mesh(GEO.rock,MAT.rock);
         rock.scale.set(sx,sy,sz); rock.rotation.set((r()-0.5)*0.4,r()*Math.PI*2,(r()-0.5)*0.4);
-        rock.position.set(wx,gy+sy*0.35,wz);
-        rock.castShadow=rock.receiveShadow=true; grp.add(rock);
+        rock.position.set(wx,gy+sy*0.35,wz); rock.castShadow=rock.receiveShadow=true; grp.add(rock);
         lc.push({type:'sphere',x:wx,y:gy+sy*0.48,z:wz,r:Math.max(sx,sz)*0.9,topY:gy+sy*0.48+sy*0.85});
         occupy(wx,wz,Math.max(sx,sz)*1.2);
     }
 
-    /* FLEURS */
     for(let i=0,n=25+(r()*50|0);i<n;i++){
         let wx,wz,tries=0;
         do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.9; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.9; } while(!canPlace(wx,wz,1.5)&&++tries<10);
@@ -548,11 +477,9 @@ function _buildChunk(cx,cz,key){
         const gy=findY(wx,wz);
         const st=new THREE.Mesh(GEO.stem,MAT.stem); st.position.set(wx,gy+0.15,wz); grp.add(st);
         const hd=new THREE.Mesh(GEO.flower,flowerMat(FLOWER_COLORS[(r()*FLOWER_COLORS.length)|0]));
-        hd.position.set(wx,gy+0.65,wz); grp.add(hd);
-        occupy(wx,wz,0.8);
+        hd.position.set(wx,gy+0.65,wz); grp.add(hd); occupy(wx,wz,0.8);
     }
 
-    /* CHAMPIGNONS */
     for(let i=0,n=1+(r()*4|0);i<n;i++){
         let wx,wz,tries=0;
         do{ wx=oX+(r()-0.5)*CHUNK_SIZE*0.88; wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88; } while(!canPlace(wx,wz,2)&&++tries<15);
@@ -564,20 +491,17 @@ function _buildChunk(cx,cz,key){
         }
     }
 
-    /* HERBE */
     const gn=50+(r()*50|0);
     const gm=new THREE.InstancedMesh(GEO.grass,MAT.grass,gn);
     gm.frustumCulled=false;
     const dm=new THREE.Object3D();
     for(let i=0;i<gn;i++){
         const wx=oX+(r()-0.5)*CHUNK_SIZE,wz=oZ+(r()-0.5)*CHUNK_SIZE;
-        dm.position.set(wx,findY(wx,wz),wz);
-        dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
+        dm.position.set(wx,findY(wx,wz),wz); dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
         gm.setMatrixAt(i,dm.matrix);
     }
     gm.instanceMatrix.needsUpdate=true; grp.add(gm);
 
-    /* LUCIOLES */
     for(let i=0,n=2+(r()*6|0);i<n;i++){
         const wx=oX+(r()-0.5)*CHUNK_SIZE*0.88,wz=oZ+(r()-0.5)*CHUNK_SIZE*0.88;
         const fy=findY(wx,wz)+2+r()*4;
@@ -585,7 +509,6 @@ function _buildChunk(cx,cz,key){
         fireflyData.push({mesh:m,baseY:fy,phase:r()*10,ox:wx,oz:wz});
     }
 
-    /* FADE-IN */
     grp.traverse(obj=>{
         if(!obj.isMesh) return;
         const mats=Array.isArray(obj.material)?obj.material:[obj.material];
@@ -633,38 +556,50 @@ function updateChunks(px,pz){
 }
 
 /* ─── PHYSIQUE ───────────────────────────────────────── */
-const PLAYER_R=0.4,PLAYER_H=1.8;
-function resolveColliders(nx, ny, nz) {
-    let onTop = false;
-    let isOnLadder = false;
-    
-    for (const c of globalColliders) {
-        // Détection spéciale pour l'échelle
-        if (c.type === 'ladder') {
-            if (nx > c.minX && nx < c.maxX && nz > c.minZ && nz < c.maxZ) {
-                const pBot = ny - PLAYER_H;
-                if (ny > c.bottom && pBot < c.top) {
-                    isOnLadder = true;
-                }
+const PLAYER_R=0.4, PLAYER_H=1.8;
+
+function resolveColliders(nx,ny,nz){
+    let onTop=false, isOnLadder=false;
+
+    for(const c of globalColliders){
+
+        if(c.type==='ladder'){
+            if(nx>c.minX&&nx<c.maxX&&nz>c.minZ&&nz<c.maxZ){
+                const pBot=ny-PLAYER_H;
+                if(ny>c.bottom&&pBot<c.top) isOnLadder=true;
             }
-            continue; // Ne bloque pas le mouvement horizontal
+            continue;
         }
 
-        if (c.type === 'cylinder') {
-            const dx = nx - c.x, dz = nz - c.z, dXZ = Math.sqrt(dx * dx + dz * dz), cTop = c.y + c.h, pBot = ny - PLAYER_H;
-            if (dXZ < c.r + PLAYER_R && ny > c.y && pBot < cTop) {
-                if (pBot >= cTop - 0.65) { ny = cTop + PLAYER_H; onTop = true; }
-                else { const a = Math.atan2(dz, dx); nx = c.x + Math.cos(a) * (c.r + PLAYER_R); nz = c.z + Math.sin(a) * (c.r + PLAYER_R); }
+        if(c.type==='wall'){
+            // AABB simple : bloquer si le joueur est dans la hauteur du mur
+            if(ny>c.bottom&&(ny-PLAYER_H)<c.top){
+                const dx=nx-c.cx, dz=nz-c.cz;
+                const penX=c.hw-Math.abs(dx), penZ=c.hd-Math.abs(dz);
+                if(penX>0&&penZ>0){
+                    // Repousser selon la plus petite pénétration
+                    if(penX<penZ) nx+=Math.sign(dx)*penX;
+                    else          nz+=Math.sign(dz)*penZ;
+                }
             }
-        } else {
-            const dx = nx - c.x, dz = nz - c.z, dxz = Math.sqrt(dx * dx + dz * dz), pBot = ny - PLAYER_H, dy = (ny - PLAYER_H * 0.5) - c.y, dist3 = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (dist3 < c.r + PLAYER_R && dist3 > 0.001) {
-                if (pBot >= c.topY - 0.8 && dy > -0.2) { ny = c.topY + PLAYER_H; onTop = true; }
-                else if (dxz > 0.01) { const need = c.r + PLAYER_R * 1.1; if (dxz < need) { nx += (dx / dxz) * (need - dxz); nz += (dz / dxz) * (need - dxz); } }
+            continue;
+        }
+
+        if(c.type==='cylinder'){
+            const dx=nx-c.x,dz=nz-c.z,dXZ=Math.sqrt(dx*dx+dz*dz),cTop=c.y+c.h,pBot=ny-PLAYER_H;
+            if(dXZ<c.r+PLAYER_R&&ny>c.y&&pBot<cTop){
+                if(pBot>=cTop-0.65){ny=cTop+PLAYER_H;onTop=true;}
+                else{const a=Math.atan2(dz,dx);nx=c.x+Math.cos(a)*(c.r+PLAYER_R);nz=c.z+Math.sin(a)*(c.r+PLAYER_R);}
+            }
+        } else if(c.type==='sphere'){
+            const dx=nx-c.x,dz=nz-c.z,dxz=Math.sqrt(dx*dx+dz*dz),pBot=ny-PLAYER_H,dy=(ny-PLAYER_H*0.5)-c.y,dist3=Math.sqrt(dx*dx+dy*dy+dz*dz);
+            if(dist3<c.r+PLAYER_R&&dist3>0.001){
+                if(pBot>=c.topY-0.8&&dy>-0.2){ny=c.topY+PLAYER_H;onTop=true;}
+                else if(dxz>0.01){const need=c.r+PLAYER_R*1.1;if(dxz<need){nx+=(dx/dxz)*(need-dxz);nz+=(dz/dxz)*(need-dxz);}}
             }
         }
     }
-    return { x: nx, y: ny, z: nz, onTop, isOnLadder };
+    return{x:nx,y:ny,z:nz,onTop,isOnLadder};
 }
 
 /* ─── CONTROLS ───────────────────────────────────────── */
@@ -682,65 +617,46 @@ addEventListener('keyup',e=>{
     if(!e.shiftKey)keys.shift=false;
 });
 const _fwd=new THREE.Vector3(),_right=new THREE.Vector3();
-function updateMovement(dt) {
-    const run = keys.shift && (keys.z || keys.s || keys.q || keys.d);
-    _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion); _fwd.y = 0; _fwd.normalize();
-    _right.set(1, 0, 0).applyQuaternion(camera.quaternion); _right.y = 0; _right.normalize();
 
-    // Vérifier l'état des collisions à la position actuelle
-    const check = resolveColliders(camera.position.x, camera.position.y, camera.position.z);
+function updateMovement(dt){
+    const run=keys.shift&&(keys.z||keys.s||keys.q||keys.d);
+    _fwd.set(0,0,-1).applyQuaternion(camera.quaternion); _fwd.y=0; _fwd.normalize();
+    _right.set(1,0,0).applyQuaternion(camera.quaternion); _right.y=0; _right.normalize();
 
-    if (check.isOnLadder) {
-        // --- LOGIQUE ÉCHELLE ---
-        velocity.set(0, 0, 0); 
-        jumpVel = 0; 
-        grounded = true;
+    const check=resolveColliders(camera.position.x,camera.position.y,camera.position.z);
 
-        const climbSpeed = 0.18;
-        if (keys.z) camera.position.y += climbSpeed; // Monter
-        if (keys.s) camera.position.y -= climbSpeed; // Descendre
-        
-        // Permet de se détacher de l'échelle en bougeant
-        if (keys.q) camera.position.addScaledVector(_right, -0.05);
-        if (keys.d) camera.position.addScaledVector(_right, 0.05);
-        if (keys.s && !keys.z) camera.position.addScaledVector(_fwd, -0.03); // Reculer pour descendre
-
+    if(check.isOnLadder){
+        velocity.set(0,0,0); jumpVel=0; grounded=true;
+        const climbSpeed=0.18;
+        if(keys.z) camera.position.y+=climbSpeed;
+        if(keys.s) camera.position.y-=climbSpeed;
+        if(keys.q) camera.position.addScaledVector(_right,-0.05);
+        if(keys.d) camera.position.addScaledVector(_right,0.05);
     } else {
-        // --- LOGIQUE NORMALE ---
-        const slope = 1 - Math.abs(terrainNormal(camera.position.x, camera.position.z).y);
-        const accel = (run ? 0.065 : 0.032) * (1 - slope * 0.5);
-
-        if (keys.z) velocity.addScaledVector(_fwd, accel);
-        if (keys.s) velocity.addScaledVector(_fwd, -accel);
-        if (keys.q) velocity.addScaledVector(_right, -accel);
-        if (keys.d) velocity.addScaledVector(_right, accel);
-
+        const slope=1-Math.abs(terrainNormal(camera.position.x,camera.position.z).y);
+        const accel=(run?0.065:0.032)*(1-slope*0.5);
+        if(keys.z) velocity.addScaledVector(_fwd,accel);
+        if(keys.s) velocity.addScaledVector(_fwd,-accel);
+        if(keys.q) velocity.addScaledVector(_right,-accel);
+        if(keys.d) velocity.addScaledVector(_right,accel);
         velocity.multiplyScalar(0.88);
-        
-        let nx = camera.position.x + velocity.x;
-        let ny = camera.position.y;
-        let nz = camera.position.z + velocity.z;
 
-        jumpVel = Math.max(jumpVel - 0.016, -1.2); 
-        ny += jumpVel;
-
-        const moveRes = resolveColliders(nx, ny, nz);
-        nx = moveRes.x; ny = moveRes.y; nz = moveRes.z;
-
-        const tgy = findY(nx, nz) + PLAYER_H;
-        if (ny <= tgy) {
-            if (jumpVel <= 0 && !moveRes.onTop) {
-                if (smoothGroundY === null) smoothGroundY = ny;
-                smoothGroundY += (tgy - smoothGroundY) * Math.min(1, 0.25 + (1 - slope) * 0.25 + dt * 8);
-                ny = Math.max(smoothGroundY, tgy - 0.05);
-            } else { ny = tgy; smoothGroundY = ny; }
-            if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
-        } else if (moveRes.onTop) {
-            smoothGroundY = ny;
-            if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
-        } else { smoothGroundY = null; grounded = false; }
-        
-        camera.position.set(nx, ny, nz);
+        let nx=camera.position.x+velocity.x, ny=camera.position.y, nz=camera.position.z+velocity.z;
+        jumpVel=Math.max(jumpVel-0.016,-1.2); ny+=jumpVel;
+        const res=resolveColliders(nx,ny,nz);
+        nx=res.x; ny=res.y; nz=res.z;
+        const tgy=findY(nx,nz)+PLAYER_H;
+        if(ny<=tgy){
+            if(jumpVel<=0&&!res.onTop){
+                if(smoothGroundY===null) smoothGroundY=ny;
+                smoothGroundY+=(tgy-smoothGroundY)*Math.min(1,0.25+(1-slope)*0.25+dt*8);
+                ny=Math.max(smoothGroundY,tgy-0.05);
+            } else { ny=tgy; smoothGroundY=ny; }
+            if(jumpVel<=0){jumpVel=0;grounded=true;}
+        } else if(res.onTop){
+            smoothGroundY=ny; if(jumpVel<=0){jumpVel=0;grounded=true;}
+        } else { smoothGroundY=null; grounded=false; }
+        camera.position.set(nx,ny,nz);
     }
 }
 
@@ -753,25 +669,11 @@ function animate(){
     const dt=Math.min(clock.getDelta(),0.05);
     elapsed+=dt;
     for(const w of windObjects) w.mesh.rotation.z=Math.sin(elapsed*w.speed+w.phase)*w.amp;
-    for(const f of fireflyData){
-        f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5;
-        f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008;
-    }
+    for(const f of fireflyData){ f.mesh.position.y=f.baseY+Math.sin(elapsed+f.phase)*0.5; f.mesh.position.x+=Math.cos(elapsed*0.3+f.phase)*0.008; }
     for(const[key,fd]of chunkFadeIn){
         fd.alpha=Math.min(1,fd.alpha+dt*1.5);
-        fd.group.traverse(obj=>{
-            if(!obj.isMesh)return;
-            const mats=Array.isArray(obj.material)?obj.material:[obj.material];
-            for(const m of mats)if(m._bOp!==undefined)m.opacity=fd.alpha*m._bOp;
-        });
-        if(fd.alpha>=1){
-            fd.group.traverse(obj=>{
-                if(!obj.isMesh)return;
-                const mats=Array.isArray(obj.material)?obj.material:[obj.material];
-                for(const m of mats)if(m._bOp!==undefined){m.opacity=m._bOp;m.transparent=m._bOp<1;}
-            });
-            chunkFadeIn.delete(key);
-        }
+        fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined)m.opacity=fd.alpha*m._bOp;});
+        if(fd.alpha>=1){fd.group.traverse(obj=>{if(!obj.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const m of mats)if(m._bOp!==undefined){m.opacity=m._bOp;m.transparent=m._bOp<1;}});chunkFadeIn.delete(key);}
     }
     updateDayNight(elapsed);
     if(controls.isLocked) updateMovement(dt);
