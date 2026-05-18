@@ -632,13 +632,14 @@ function updateMovement(dt){
         if(keys.s){
             const minY = findY(camera.position.x, camera.position.z) + PLAYER_H;
             camera.position.y = Math.max(camera.position.y - climbSpeed, minY);
-            if(camera.position.y <= minY){
-                // Trouver l'échelle la plus proche et pousser le joueur loin d'elle
+            if(camera.position.y <= minY + 0.3){
                 const ladder = globalColliders.find(c=>c.type==='ladder');
                 if(ladder){
                     const midZ = (ladder.minZ + ladder.maxZ) * 0.5;
                     const dir = camera.position.z > midZ ? 1 : -1;
-                    camera.position.z += dir * 1.2;
+                    // Sortie progressive — plus douce
+                    const t = 1 - (camera.position.y - minY) / 0.3;
+                    camera.position.z += dir * 0.08 * t;
                 }
             }
         }
