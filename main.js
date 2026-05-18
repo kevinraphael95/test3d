@@ -305,44 +305,42 @@ function buildTower(wx,wz,grp,lc){
         }
     }
 
+
     // ── ÉCHELLE — collée à la face Z+ ────────────────────
-    const LADDER_W    = 1.0;    // largeur entre les deux montants
-    const LADDER_Z    = PLT_HALF + 0.25; // collée à l'extérieur face Z+
-    const RUNG_COUNT  = Math.floor(TOWER_H / 0.9); // un barreau tous les ~0.9u
-    const RUNG_SPACING= TOWER_H / RUNG_COUNT;
-
-    // Montant gauche
-    const postL=new THREE.Mesh(
-        new THREE.CylinderGeometry(0.09,0.09,TOWER_H+0.5,7),
-        MAT.towLog
-    );
-    postL.position.set(-LADDER_W*0.5, TOWER_H*0.5, LADDER_Z);
-    postL.castShadow=true; tg.add(postL);
-    lc.push({type:'cylinder',x:wx-LADDER_W*0.5,y:gy,z:wz+LADDER_Z,r:0.18,h:TOWER_H+0.5});
-
-    // Montant droit
-    const postR=new THREE.Mesh(
-        new THREE.CylinderGeometry(0.09,0.09,TOWER_H+0.5,7),
-        MAT.towLog
-    );
-    postR.position.set(LADDER_W*0.5, TOWER_H*0.5, LADDER_Z);
-    postR.castShadow=true; tg.add(postR);
-    lc.push({type:'cylinder',x:wx+LADDER_W*0.5,y:gy,z:wz+LADDER_Z,r:0.18,h:TOWER_H+0.5});
-
-    // Barreaux
-    for(let i=1;i<=RUNG_COUNT;i++){
-        const ry=i*RUNG_SPACING;
-        const rung=new THREE.Mesh(
-            new THREE.CylinderGeometry(0.05,0.05,LADDER_W,6),
-            MAT.towLog
-        );
-        rung.rotation.z=Math.PI/2;
-        rung.position.set(0,ry,LADDER_Z);
-        tg.add(rung);
-    }
-
-    // Collider unique pour toute la zone de l'échelle
-    lc.push({type:'cylinder',x:wx,y:gy,z:wz+LADDER_Z,r:LADDER_W*0.7,h:TOWER_H+0.5});
+        const LADDER_W    = 1.2; 
+        const LADDER_Z    = PLT_HALF + 0.3;
+        const RUNG_COUNT  = Math.floor(TOWER_H / 0.8);
+        const RUNG_SPACING= TOWER_H / RUNG_COUNT;
+    
+        // Montant gauche
+        const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
+        postL.position.set(-LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
+        postL.castShadow = true; tg.add(postL);
+    
+        // Montant droit
+        const postR = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TOWER_H + 0.5, 7), MAT.towLog);
+        postR.position.set(LADDER_W * 0.5, TOWER_H * 0.5, LADDER_Z);
+        postR.castShadow = true; tg.add(postR);
+    
+        // Barreaux
+        for(let i=1; i<=RUNG_COUNT; i++){
+            const ry = i * RUNG_SPACING;
+            const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, LADDER_W, 6), MAT.towLog);
+            rung.rotation.z = Math.PI / 2;
+            rung.position.set(0, ry, LADDER_Z);
+            tg.add(rung);
+        }
+    
+        // ZONE DE COLLISION ÉCHELLE (Rectangle non-bloquant)
+        lc.push({
+            type: 'ladder',
+            minX: wx - LADDER_W, 
+            maxX: wx + LADDER_W,
+            minZ: wz + LADDER_Z - 0.7, 
+            maxZ: wz + LADDER_Z + 0.7,
+            bottom: gy,
+            top: gy + TOWER_H + 1.5
+        });
 
     // ── PLANCHER PLATEFORME ───────────────────────────────
     const floorW=PLT_HALF*2+0.15;
@@ -622,24 +620,37 @@ function updateChunks(px,pz){
 
 /* ─── PHYSIQUE ───────────────────────────────────────── */
 const PLAYER_R=0.4,PLAYER_H=1.8;
-function resolveColliders(nx,ny,nz){
-    let onTop=false;
-    for(const c of globalColliders){
-        if(c.type==='cylinder'){
-            const dx=nx-c.x,dz=nz-c.z,dXZ=Math.sqrt(dx*dx+dz*dz),cTop=c.y+c.h,pBot=ny-PLAYER_H;
-            if(dXZ<c.r+PLAYER_R&&ny>c.y&&pBot<cTop){
-                if(pBot>=cTop-0.65){ny=cTop+PLAYER_H;onTop=true;}
-                else{const a=Math.atan2(dz,dx);nx=c.x+Math.cos(a)*(c.r+PLAYER_R);nz=c.z+Math.sin(a)*(c.r+PLAYER_R);}
+function resolveColliders(nx, ny, nz) {
+    let onTop = false;
+    let isOnLadder = false;
+    
+    for (const c of globalColliders) {
+        // Détection spéciale pour l'échelle
+        if (c.type === 'ladder') {
+            if (nx > c.minX && nx < c.maxX && nz > c.minZ && nz < c.maxZ) {
+                const pBot = ny - PLAYER_H;
+                if (ny > c.bottom && pBot < c.top) {
+                    isOnLadder = true;
+                }
+            }
+            continue; // Ne bloque pas le mouvement horizontal
+        }
+
+        if (c.type === 'cylinder') {
+            const dx = nx - c.x, dz = nz - c.z, dXZ = Math.sqrt(dx * dx + dz * dz), cTop = c.y + c.h, pBot = ny - PLAYER_H;
+            if (dXZ < c.r + PLAYER_R && ny > c.y && pBot < cTop) {
+                if (pBot >= cTop - 0.65) { ny = cTop + PLAYER_H; onTop = true; }
+                else { const a = Math.atan2(dz, dx); nx = c.x + Math.cos(a) * (c.r + PLAYER_R); nz = c.z + Math.sin(a) * (c.r + PLAYER_R); }
             }
         } else {
-            const dx=nx-c.x,dz=nz-c.z,dxz=Math.sqrt(dx*dx+dz*dz),pBot=ny-PLAYER_H,dy=(ny-PLAYER_H*0.5)-c.y,dist3=Math.sqrt(dx*dx+dy*dy+dz*dz);
-            if(dist3<c.r+PLAYER_R&&dist3>0.001){
-                if(pBot>=c.topY-0.8&&dy>-0.2){ny=c.topY+PLAYER_H;onTop=true;}
-                else if(dxz>0.01){const need=c.r+PLAYER_R*1.1;if(dxz<need){nx+=(dx/dxz)*(need-dxz);nz+=(dz/dxz)*(need-dxz);}}
+            const dx = nx - c.x, dz = nz - c.z, dxz = Math.sqrt(dx * dx + dz * dz), pBot = ny - PLAYER_H, dy = (ny - PLAYER_H * 0.5) - c.y, dist3 = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist3 < c.r + PLAYER_R && dist3 > 0.001) {
+                if (pBot >= c.topY - 0.8 && dy > -0.2) { ny = c.topY + PLAYER_H; onTop = true; }
+                else if (dxz > 0.01) { const need = c.r + PLAYER_R * 1.1; if (dxz < need) { nx += (dx / dxz) * (need - dxz); nz += (dz / dxz) * (need - dxz); } }
             }
         }
     }
-    return{x:nx,y:ny,z:nz,onTop};
+    return { x: nx, y: ny, z: nz, onTop, isOnLadder };
 }
 
 /* ─── CONTROLS ───────────────────────────────────────── */
@@ -657,33 +668,66 @@ addEventListener('keyup',e=>{
     if(!e.shiftKey)keys.shift=false;
 });
 const _fwd=new THREE.Vector3(),_right=new THREE.Vector3();
-function updateMovement(dt){
-    const run=keys.shift&&(keys.z||keys.s||keys.q||keys.d);
-    _fwd.set(0,0,-1).applyQuaternion(camera.quaternion); _fwd.y=0; _fwd.normalize();
-    _right.set(1,0,0).applyQuaternion(camera.quaternion); _right.y=0; _right.normalize();
-    const slope=1-Math.abs(terrainNormal(camera.position.x,camera.position.z).y);
-    const accel=(run?0.065:0.032)*(1-slope*0.5);
-    if(keys.z)velocity.addScaledVector(_fwd,accel);
-    if(keys.s)velocity.addScaledVector(_fwd,-accel);
-    if(keys.q)velocity.addScaledVector(_right,-accel);
-    if(keys.d)velocity.addScaledVector(_right,accel);
-    velocity.multiplyScalar(0.88);
-    let nx=camera.position.x+velocity.x,ny=camera.position.y,nz=camera.position.z+velocity.z;
-    jumpVel=Math.max(jumpVel-0.016,-1.2); ny+=jumpVel;
-    const res=resolveColliders(nx,ny,nz); nx=res.x; ny=res.y; nz=res.z;
-    const tgy=findY(nx,nz)+PLAYER_H;
-    if(ny<=tgy){
-        if(jumpVel<=0&&!res.onTop){
-            if(smoothGroundY===null)smoothGroundY=ny;
-            smoothGroundY+=(tgy-smoothGroundY)*Math.min(1,0.25+(1-slope)*0.25+dt*8);
-            ny=Math.max(smoothGroundY,tgy-0.05);
-        } else { ny=tgy; smoothGroundY=ny; }
-        if(jumpVel<=0){jumpVel=0;grounded=true;}
-    } else if(res.onTop){
-        smoothGroundY=ny;
-        if(jumpVel<=0){jumpVel=0;grounded=true;}
-    } else { smoothGroundY=null; grounded=false; }
-    camera.position.set(nx,ny,nz);
+function updateMovement(dt) {
+    const run = keys.shift && (keys.z || keys.s || keys.q || keys.d);
+    _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion); _fwd.y = 0; _fwd.normalize();
+    _right.set(1, 0, 0).applyQuaternion(camera.quaternion); _right.y = 0; _right.normalize();
+
+    // Vérifier l'état des collisions à la position actuelle
+    const check = resolveColliders(camera.position.x, camera.position.y, camera.position.z);
+
+    if (check.isOnLadder) {
+        // --- LOGIQUE ÉCHELLE ---
+        velocity.set(0, 0, 0); 
+        jumpVel = 0; 
+        grounded = true;
+
+        const climbSpeed = 0.18;
+        if (keys.z) camera.position.y += climbSpeed; // Monter
+        if (keys.s) camera.position.y -= climbSpeed; // Descendre
+        
+        // Permet de se détacher de l'échelle en bougeant
+        if (keys.q) camera.position.addScaledVector(_right, -0.05);
+        if (keys.d) camera.position.addScaledVector(_right, 0.05);
+        if (keys.s && !keys.z) camera.position.addScaledVector(_fwd, -0.03); // Reculer pour descendre
+
+    } else {
+        // --- LOGIQUE NORMALE ---
+        const slope = 1 - Math.abs(terrainNormal(camera.position.x, camera.position.z).y);
+        const accel = (run ? 0.065 : 0.032) * (1 - slope * 0.5);
+
+        if (keys.z) velocity.addScaledVector(_fwd, accel);
+        if (keys.s) velocity.addScaledVector(_fwd, -accel);
+        if (keys.q) velocity.addScaledVector(_right, -accel);
+        if (keys.d) velocity.addScaledVector(_right, accel);
+
+        velocity.multiplyScalar(0.88);
+        
+        let nx = camera.position.x + velocity.x;
+        let ny = camera.position.y;
+        let nz = camera.position.z + velocity.z;
+
+        jumpVel = Math.max(jumpVel - 0.016, -1.2); 
+        ny += jumpVel;
+
+        const moveRes = resolveColliders(nx, ny, nz);
+        nx = moveRes.x; ny = moveRes.y; nz = moveRes.z;
+
+        const tgy = findY(nx, nz) + PLAYER_H;
+        if (ny <= tgy) {
+            if (jumpVel <= 0 && !moveRes.onTop) {
+                if (smoothGroundY === null) smoothGroundY = ny;
+                smoothGroundY += (tgy - smoothGroundY) * Math.min(1, 0.25 + (1 - slope) * 0.25 + dt * 8);
+                ny = Math.max(smoothGroundY, tgy - 0.05);
+            } else { ny = tgy; smoothGroundY = ny; }
+            if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
+        } else if (moveRes.onTop) {
+            smoothGroundY = ny;
+            if (jumpVel <= 0) { jumpVel = 0; grounded = true; }
+        } else { smoothGroundY = null; grounded = false; }
+        
+        camera.position.set(nx, ny, nz);
+    }
 }
 
 /* ─── BOUCLE ─────────────────────────────────────────── */
