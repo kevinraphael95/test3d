@@ -358,53 +358,46 @@ function buildTower(wx,wz,grp,lc){
     }
 
     // ── GARDE-CORPS plateforme ────────────────────────────
-    // ── GARDE-CORPS plateforme ────────────────────────────
-       const railTop = TOWER_H + 1.15;
-       const railMid = TOWER_H + 0.58;
-       const gcSides = [
-           // [0,           PLT_HALF+0.1, 0,         floorW], // (Côté échelle - sans collision)
-           [-PLT_HALF-0.1, 0,          Math.PI/2, floorW],
-           [ PLT_HALF+0.1, 0,          Math.PI/2, floorW],
-           [0,          -PLT_HALF-0.1, 0,         floorW],
-       ];
-  
-       for(const [cx, cz, ry, len] of gcSides){
-           // Visuel des rails
-           for(const rh of [railMid, railTop]){
-               const r = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, len, 5), MAT.towRail);
-               r.rotation.set(0, ry, Math.PI/2); 
-               r.position.set(cx, rh, cz); 
-               tg.add(r);
-           }
-          
-           // Visuel des barreaux verticaux
-           const nb = Math.ceil(len/0.62) + 1;
-           for(let i=0; i<=nb; i++){
-               const t2 = (i/nb - 0.5) * len;
-               const bx = ry === 0 ? cx + t2 : cx;
-               const bz = ry === 0 ? cz : cz + t2;
-               const bar = new THREE.Mesh(GEO.towBarV, MAT.towRail);
-               bar.position.set(bx, TOWER_H + 0.72, bz); 
-               tg.add(bar);
-           }
-  
-           // --- COLLISION RÉPARÉE ---
-           // On crée une zone de collision qui couvre toute la longueur du rail
-           // On utilise plusieurs petits cylindres pour simuler un mur
-           for (let i = 0; i <= 3; i++) {
-               const offset = (i / 3 - 0.5) * len;
-               const colX = ry === 0 ? wx + cx + offset : wx + cx;
-               const colZ = ry === 0 ? wz + cz : wz + cz + offset;
-               lc.push({
-                   type: 'cylinder',
-                   x: colX,
-                   y: gy + TOWER_H,
-                   z: colZ,
-                   r: 0.4, // Rayon pour bloquer le joueur
-                   h: 1.5
-               });
-           }
-       }
+        const railTop=TOWER_H+1.15, railMid=TOWER_H+0.58;
+        const gcSides=[
+            // [0,           PLT_HALF+0.1, 0,         floorW], // Côté échelle (laissé ouvert)
+            [-PLT_HALF-0.1, 0,          Math.PI/2, floorW],
+            [ PLT_HALF+0.1, 0,          Math.PI/2, floorW],
+            [0,          -PLT_HALF-0.1, 0,         floorW],
+        ];
+    
+        for(const [cx,cz,ry,len] of gcSides){
+            // Visuel des barres horizontales
+            for(const rh of [railMid,railTop]){
+                const r=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,5),MAT.towRail);
+                r.rotation.set(0,ry,Math.PI/2); r.position.set(cx,rh,cz); tg.add(r);
+            }
+            // Visuel des barreaux verticaux
+            const nb=Math.ceil(len/0.62)+1;
+            for(let i=0;i<=nb;i++){
+                const t2=(i/nb-0.5)*len;
+                const bx=ry===0?cx+t2:cx, bz=ry===0?cz:cz+t2;
+                const bar=new THREE.Mesh(GEO.towBarV,MAT.towRail);
+                bar.position.set(bx,TOWER_H+0.72,bz); tg.add(bar);
+            }
+    
+            // AJOUT DE LA COLLISION (Le mur invisible)
+            // On place 3 points de collision par rail pour boucher tout le long
+            for(let j=0; j<3; j++) {
+                const offset = (j/2 - 0.5) * len;
+                const colX = ry === 0 ? wx + cx + offset : wx + cx;
+                const colZ = ry === 0 ? wz + cz : wz + cz + offset;
+                
+                lc.push({
+                    type: 'cylinder',
+                    x: colX,
+                    y: gy + TOWER_H, 
+                    z: colZ,
+                    r: 0.5, // Rayon pour bloquer le joueur
+                    h: 1.5  // Hauteur du mur
+                });
+            }
+        }
 
     // ── TOIT CARRÉ — porté par 4 petits piliers ──────────
     const roofPillarH=5;
