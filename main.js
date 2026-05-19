@@ -45,7 +45,7 @@ scene.background = skyTex;
 const SKY = {
     day:    { top:[0.28,0.42,0.58], mid:[0.55,0.72,0.82], hor:[0.75,0.86,0.90] },
     sunset: { top:[0.18,0.14,0.28], mid:[0.70,0.32,0.12], hor:[0.95,0.55,0.25] },
-    night:  { top:[0.03,0.05,0.12], mid:[0.05,0.08,0.16], hor:[0.08,0.11,0.20] },
+    night:  { top:[0.04,0.07,0.18], mid:[0.07,0.12,0.25], hor:[0.10,0.16,0.32] },
     dawn:   { top:[0.15,0.14,0.28], mid:[0.55,0.30,0.18], hor:[0.90,0.55,0.30] },
 };
 
@@ -71,18 +71,19 @@ function drawSky(){
    LUMIÈRES — ambiance nordique froide
 ═══════════════════════════════════════════════════════ */
 // Lumière ambiante froide (ciel gris-bleu) + sol sombre
-const hemi = new THREE.HemisphereLight(0xb0c8d8, 0x2a3020, 1.0);
+const hemi = new THREE.HemisphereLight(0xb0c8d8, 0x2a3020, 1.4);
 scene.add(hemi);
 
 // Soleil bas et rasant — lumière froide légèrement dorée
-const sun = new THREE.DirectionalLight(0xfff0d0, 2.8);
+const sun = new THREE.DirectionalLight(0xfff0d0, 3.8);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(1024);
-sun.shadow.camera.left   = sun.shadow.camera.bottom = -150;
-sun.shadow.camera.right  = sun.shadow.camera.top    =  150;
-sun.shadow.camera.far    = 1500;
+sun.shadow.mapSize.setScalar(2048);
+sun.shadow.camera.left   = sun.shadow.camera.bottom = -80;
+sun.shadow.camera.right  = sun.shadow.camera.top    =  80;
+sun.shadow.camera.far    = 400;
 sun.shadow.bias = -0.001;
 scene.add(sun);
+scene.add(sun.target);
 
 const moonLight = new THREE.DirectionalLight(0x3a5580, 0);
 scene.add(moonLight);
@@ -138,7 +139,7 @@ scene.add(starsObj);
 ═══════════════════════════════════════════════════════ */
 const DAY_DURATION = 1200, ORBIT_R = 1400;
 const _fogDay   = new THREE.Color(0xb8cfd8);
-const _fogNight = new THREE.Color(0x04070f);
+const _fogNight = new THREE.Color(0x0a1428);
 const _sd = new THREE.Vector3(), _md = new THREE.Vector3();
 
 function updateDayNight(elapsed){
@@ -150,7 +151,13 @@ function updateDayNight(elapsed){
     const mfS   = mf*mf*(3-2*mf);
 
     const sunX = Math.cos(angle)*ORBIT_R, sunY = Math.sin(angle)*ORBIT_R;
-    sun.position.set(sunX, sunY, ORBIT_R*0.2);
+    sun.position.set(
+        camera.position.x + sunX,
+        sunY,
+        camera.position.z + ORBIT_R*0.2
+    );
+    sun.target.position.set(camera.position.x, 0, camera.position.z);
+    sun.target.updateMatrixWorld();
     moonLight.position.set(-sunX,-sunY, ORBIT_R*0.2);
 
     const cp = camera.position;
@@ -162,8 +169,8 @@ function updateDayNight(elapsed){
     moonGlow.position.copy(cp).addScaledVector(_md,1340);
 
     sun.intensity       = 0.05 + sfS*3.0;
-    moonLight.intensity = 0.15 + mfS*0.5;
-    hemi.intensity      = 0.25 + sfS*0.75;
+    moonLight.intensity = 0.8  + mfS*1.2;   // lune bien plus forte
+    hemi.intensity      = 0.55 + sfS*0.85;  // ambiance nuit bleutée visible
 
     sunSprite.material.opacity  = Math.pow(sf, 0.35);
     sunGlow.material.opacity    = Math.pow(sf, 0.5)*0.7;
@@ -173,7 +180,7 @@ function updateDayNight(elapsed){
     // Brouillard : lointain le jour, dense et sombre la nuit
     scene.fog.color.lerpColors(_fogNight, _fogDay, sfS);
     scene.fog.near = 80  + sfS*40;
-    scene.fog.far  = 280 + sfS*120;
+    scene.fog.far  = 380 + sfS*220;
 
     starMat.uniforms.uOp.value = Math.max(0, 1-sfS*2)*0.9;
     starMat.uniforms.uT.value  = elapsed;
@@ -816,6 +823,7 @@ function animate(){
     }
 
     updateDayNight(elapsed);
+    sun.shadow.camera.updateProjectionMatrix();
     if(controls.isLocked) updateMovement(dt);
     updateChunks(camera.position.x, camera.position.z);
     renderer.render(scene, camera);
