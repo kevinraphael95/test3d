@@ -71,11 +71,11 @@ function drawSky(){
    LUMIÈRES — ambiance nordique froide
 ═══════════════════════════════════════════════════════ */
 // Lumière ambiante froide (ciel gris-bleu) + sol sombre
-const hemi = new THREE.HemisphereLight(0xc8dde8, 0x4a6030, 1.8);
+const hemi = new THREE.HemisphereLight(0xb0c8d8, 0x2a3020, 1.4);
 scene.add(hemi);
 
 // Soleil bas et rasant — lumière froide légèrement dorée
-const sun = new THREE.DirectionalLight(0xfff8e8, 4.5);
+const sun = new THREE.DirectionalLight(0xfff0d0, 3.8);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(2048);
 sun.shadow.camera.left   = sun.shadow.camera.bottom = -80;
@@ -170,7 +170,7 @@ function updateDayNight(elapsed){
 
     sun.intensity       = 0.05 + sfS*3.0;
     moonLight.intensity = 0.8  + mfS*1.2;   // lune bien plus forte
-    hemi.intensity = 0.75 + sfS*1.05;  // ambiance nuit bleutée visible
+    hemi.intensity      = 0.55 + sfS*0.85;  // ambiance nuit bleutée visible
 
     sunSprite.material.opacity  = Math.pow(sf, 0.35);
     sunGlow.material.opacity    = Math.pow(sf, 0.5)*0.7;
@@ -282,12 +282,12 @@ function terrainNormal(wx, wz){
 ═══════════════════════════════════════════════════════ */
 const MAT = {
     // Terrain verdoyant mais froid
-    ground:   new THREE.MeshStandardMaterial({ color:0x3a5228, roughness:0.9 }),
+    ground:   new THREE.MeshStandardMaterial({ color:0x2d3d20, roughness:1 }),
     // Arbres — troncs et feuillage sombres/froids
-    trunk:    new THREE.MeshStandardMaterial({ color:0x3d2410 }),
-    cone0:    new THREE.MeshStandardMaterial({ color:0x1e4020 }),
-    cone1:    new THREE.MeshStandardMaterial({ color:0x254d28 }),
-    cone2:    new THREE.MeshStandardMaterial({ color:0x2d5a30 }),
+    trunk:    new THREE.MeshStandardMaterial({ color:0x1e1208 }),
+    cone0:    new THREE.MeshStandardMaterial({ color:0x0a1a0a }),
+    cone1:    new THREE.MeshStandardMaterial({ color:0x0f2210 }),
+    cone2:    new THREE.MeshStandardMaterial({ color:0x142814 }),
     // Rochers gris-bleutés style nordique
     rock:     new THREE.MeshStandardMaterial({ color:0x6a6e72, roughness:1, flatShading:true }),
     // Flore
