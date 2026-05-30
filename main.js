@@ -71,7 +71,7 @@ function drawSky(){
    LUMIÈRES — ambiance nordique froide
 ═══════════════════════════════════════════════════════ */
 // Lumière ambiante froide (ciel gris-bleu) + sol sombre
-const hemi = new THREE.HemisphereLight(0xc8dde8, 0x4a6030, 1.8);
+const hemi = new THREE.HemisphereLight(0xc8dde8, 0x4a6030, 2.8);
 scene.add(hemi);
 
 // Soleil bas et rasant — lumière froide légèrement dorée
@@ -281,19 +281,19 @@ function terrainNormal(wx, wz){
    MONTAGNES LOINTAINES
 ═══════════════════════════════════════════════════════ */
 (function buildMountains(){
-    const mtnMat  = new THREE.MeshStandardMaterial({ color:0x4a5a6a, roughness:1, flatShading:true });
-    const snowMat = new THREE.MeshStandardMaterial({ color:0xdde8f0, roughness:0.7 });
-    for(let i=0; i<32; i++){
-        const angle = (i/32)*Math.PI*2 + Math.random()*0.2;
-        const dist  = 500 + Math.random()*300;
+    const mtnMat  = new THREE.MeshStandardMaterial({ color:0x6a7a8a, roughness:1, flatShading:true });
+    const snowMat = new THREE.MeshStandardMaterial({ color:0xe8eef2, roughness:0.7 });
+    for(let i=0; i<20; i++){
+        const angle = (i/20)*Math.PI*2 + Math.random()*0.25;
+        const dist  = 700 + Math.random()*400;
         const mx = Math.cos(angle)*dist, mz = Math.sin(angle)*dist;
-        const h = 200+Math.random()*300, r = 150+Math.random()*200;
+        const h = 180+Math.random()*160, r = 100+Math.random()*100;
         const groundY = fbm(mx,mz);
-        const mesh = new THREE.Mesh(new THREE.ConeGeometry(r,h,6+(Math.random()*3|0)), mtnMat);
-        mesh.position.set(mx, groundY + h*0.5 - 20, mz);
+        const mesh = new THREE.Mesh(new THREE.ConeGeometry(r,h,7), mtnMat);
+        mesh.position.set(mx, groundY - h*0.35, mz);
         scene.add(mesh);
-        const snow = new THREE.Mesh(new THREE.ConeGeometry(r*0.3,h*0.25,6), snowMat);
-        snow.position.set(mx, groundY + h*0.5 - 20 + h*0.38, mz);
+        const snow = new THREE.Mesh(new THREE.ConeGeometry(r*0.28,h*0.22,7), snowMat);
+        snow.position.set(mx, groundY - h*0.35 + h*0.42, mz);
         scene.add(snow);
     }
 })();
@@ -304,7 +304,7 @@ function terrainNormal(wx, wz){
 ═══════════════════════════════════════════════════════ */
 const MAT = {
     // Terrain verdoyant mais froid
-    ground:   new THREE.MeshStandardMaterial({ color:0x3a5228, roughness:0.9 }),
+    ground: new THREE.MeshStandardMaterial({ color:0x4a6a30, roughness:0.9 }),
     // Arbres — troncs et feuillage sombres/froids
     trunk:    new THREE.MeshStandardMaterial({ color:0x3d2410 }),
     cone0:    new THREE.MeshStandardMaterial({ color:0x1e4020 }),
