@@ -283,16 +283,17 @@ function terrainNormal(wx, wz){
 (function buildMountains(){
     const mtnMat  = new THREE.MeshStandardMaterial({ color:0x4a5a6a, roughness:1, flatShading:true });
     const snowMat = new THREE.MeshStandardMaterial({ color:0xdde8f0, roughness:0.7 });
-    for(let i=0; i<24; i++){
-        const angle = (i/24)*Math.PI*2 + Math.random()*0.3;
-        const dist  = 900 + Math.random()*300;
+    for(let i=0; i<32; i++){
+        const angle = (i/32)*Math.PI*2 + Math.random()*0.2;
+        const dist  = 500 + Math.random()*300;
         const mx = Math.cos(angle)*dist, mz = Math.sin(angle)*dist;
-        const h = 120+Math.random()*180, r = 80+Math.random()*120;
-        const mesh = new THREE.Mesh(new THREE.ConeGeometry(r,h,5+(Math.random()*3|0)), mtnMat);
-        mesh.position.set(mx, fbm(mx,mz)+h*0.48, mz);
+        const h = 200+Math.random()*300, r = 150+Math.random()*200;
+        const groundY = fbm(mx,mz);
+        const mesh = new THREE.Mesh(new THREE.ConeGeometry(r,h,6+(Math.random()*3|0)), mtnMat);
+        mesh.position.set(mx, groundY + h*0.5 - 20, mz);
         scene.add(mesh);
-        const snow = new THREE.Mesh(new THREE.ConeGeometry(r*0.28,h*0.22,5), snowMat);
-        snow.position.set(mx, fbm(mx,mz)+h*0.87, mz);
+        const snow = new THREE.Mesh(new THREE.ConeGeometry(r*0.3,h*0.25,6), snowMat);
+        snow.position.set(mx, groundY + h*0.5 - 20 + h*0.38, mz);
         scene.add(snow);
     }
 })();
@@ -502,7 +503,7 @@ function buildMushroom(wx, wz, gy, r, grp){
 ═══════════════════════════════════════════════════════ */
 const CHUNK_SIZE   = 80;
 const CHUNK_SEGS   = 14;
-const CHUNK_RADIUS = 2;
+const CHUNK_RADIUS = 3;
 const loadedChunks = new Map();
 const chunkFadeIn  = new Map();
 
