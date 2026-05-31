@@ -27,7 +27,7 @@ document.body.appendChild(renderer.domElement);
 ═══════════════════════════════════════════════════════ */
 const scene  = new THREE.Scene();
 // Brouillard linéaire Skyrim — commence loin, finit très loin
-scene.fog    = new THREE.Fog(0xb8cfd8, 60, 600);
+scene.fog    = new THREE.Fog(0xb8cfd8, 120, 400);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(0, 10, 0);
@@ -71,7 +71,7 @@ function drawSky(){
    LUMIÈRES — ambiance nordique froide
 ═══════════════════════════════════════════════════════ */
 // Lumière ambiante froide (ciel gris-bleu) + sol sombre
-const hemi = new THREE.HemisphereLight(0xc8dde8, 0x4a6030, 2.8);
+const hemi = new THREE.HemisphereLight(0xc8dde8, 0x4a6030, 1.8);
 scene.add(hemi);
 
 // Soleil bas et rasant — lumière froide légèrement dorée
@@ -179,8 +179,8 @@ function updateDayNight(elapsed){
 
     // Brouillard : lointain le jour, dense et sombre la nuit
     scene.fog.color.lerpColors(_fogNight, _fogDay, sfS);
-    scene.fog.near = 60  + sfS*40;
-    scene.fog.far  = 500 + sfS*300;
+    scene.fog.near = 80  + sfS*40;
+    scene.fog.far  = 380 + sfS*220;
 
     starMat.uniforms.uOp.value = Math.max(0, 1-sfS*2)*0.9;
     starMat.uniforms.uT.value  = elapsed;
@@ -278,33 +278,11 @@ function terrainNormal(wx, wz){
 }
 
 /* ═══════════════════════════════════════════════════════
-   MONTAGNES LOINTAINES
-═══════════════════════════════════════════════════════ */
-(function buildMountains(){
-    const mtnMat  = new THREE.MeshStandardMaterial({ color:0x6a7a8a, roughness:1, flatShading:true });
-    const snowMat = new THREE.MeshStandardMaterial({ color:0xe8eef2, roughness:0.7 });
-    for(let i=0; i<20; i++){
-        const angle = (i/20)*Math.PI*2 + Math.random()*0.25;
-        const dist  = 700 + Math.random()*400;
-        const mx = Math.cos(angle)*dist, mz = Math.sin(angle)*dist;
-        const h = 180+Math.random()*160, r = 100+Math.random()*100;
-        const groundY = fbm(mx,mz);
-        const mesh = new THREE.Mesh(new THREE.ConeGeometry(r,h,7), mtnMat);
-        mesh.position.set(mx, groundY - h*0.35, mz);
-        scene.add(mesh);
-        const snow = new THREE.Mesh(new THREE.ConeGeometry(r*0.28,h*0.22,7), snowMat);
-        snow.position.set(mx, groundY - h*0.35 + h*0.42, mz);
-        scene.add(snow);
-    }
-})();
-
-
-/* ═══════════════════════════════════════════════════════
    MATÉRIAUX — tous partagés
 ═══════════════════════════════════════════════════════ */
 const MAT = {
     // Terrain verdoyant mais froid
-    ground: new THREE.MeshStandardMaterial({ color:0x4a6a30, roughness:0.9 }),
+    ground:   new THREE.MeshStandardMaterial({ color:0x3a5228, roughness:0.9 }),
     // Arbres — troncs et feuillage sombres/froids
     trunk:    new THREE.MeshStandardMaterial({ color:0x3d2410 }),
     cone0:    new THREE.MeshStandardMaterial({ color:0x1e4020 }),
@@ -503,7 +481,7 @@ function buildMushroom(wx, wz, gy, r, grp){
 ═══════════════════════════════════════════════════════ */
 const CHUNK_SIZE   = 80;
 const CHUNK_SEGS   = 14;
-const CHUNK_RADIUS = 3;
+const CHUNK_RADIUS = 2;
 const loadedChunks = new Map();
 const chunkFadeIn  = new Map();
 
@@ -614,34 +592,17 @@ function _buildChunk(cx, cz, key){
         }
     }
 
-
-    // Herbe haute dense
-        const bladeMats = [
-            new THREE.MeshStandardMaterial({ color:0x2d4a18 }),
-            new THREE.MeshStandardMaterial({ color:0x3a5a20 }),
-            new THREE.MeshStandardMaterial({ color:0x4a6a28 }),
-        ];
-        const bladeGeos = [
-            new THREE.CylinderGeometry(0.008,0.05,1.2,3),
-            new THREE.CylinderGeometry(0.010,0.06,1.8,3),
-            new THREE.CylinderGeometry(0.012,0.07,2.4,3),
-        ];
-        for(let vi=0; vi<3; vi++){
-            const gm2 = new THREE.InstancedMesh(bladeGeos[vi], bladeMats[vi], 150);
-            gm2.frustumCulled = false;
-            const dm2 = new THREE.Object3D();
-            for(let i=0; i<150; i++){
-                const wx2=oX+(r()-0.5)*CHUNK_SIZE*0.95, wz2=oZ+(r()-0.5)*CHUNK_SIZE*0.95;
-                dm2.position.set(wx2, findY(wx2,wz2), wz2);
-                dm2.scale.setScalar(0.7+r()*0.8);
-                dm2.rotation.y=r()*Math.PI;
-                dm2.rotation.z=(r()-0.5)*0.25;
-                dm2.updateMatrix();
-                gm2.setMatrixAt(i, dm2.matrix);
-            }
-            gm2.instanceMatrix.needsUpdate=true;
-            grp.add(gm2);
-        }
+    // Herbe instanciée
+    const gn = 50+(r()*50|0);
+    const gm = new THREE.InstancedMesh(GEO.grass, MAT.grass, gn);
+    gm.frustumCulled = false;
+    const dm = new THREE.Object3D();
+    for(let i=0; i<gn; i++){
+        const wx=oX+(r()-0.5)*CHUNK_SIZE, wz=oZ+(r()-0.5)*CHUNK_SIZE;
+        dm.position.set(wx, findY(wx,wz), wz); dm.scale.setScalar(0.5+r()*0.8); dm.rotation.y=r()*Math.PI; dm.updateMatrix();
+        gm.setMatrixAt(i, dm.matrix);
+    }
+    gm.instanceMatrix.needsUpdate=true; grp.add(gm);
 
     // Lucioles
     for(let i=0, n=2+(r()*5|0); i<n; i++){
