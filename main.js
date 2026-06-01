@@ -481,7 +481,7 @@ function buildMushroom(wx, wz, gy, r, grp){
 ═══════════════════════════════════════════════════════ */
 const CHUNK_SIZE   = 80;
 const CHUNK_SEGS   = 14;
-const CHUNK_RADIUS = 8; /* 2 */
+const CHUNK_RADIUS = 3; /* 2 */
 const loadedChunks = new Map();
 const chunkFadeIn  = new Map();
 
